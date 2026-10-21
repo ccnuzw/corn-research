@@ -234,6 +234,21 @@ class ApiClient {
     const query = searchParams.toString() ? `?${searchParams.toString()}` : ''
     return this.request<CollectionRecord[]>(`/api/records${query}`)
   }
+
+  // 统计信息
+  async getStats() {
+    // 返回 mock 数据，因为后端还没有这个 API
+    return Promise.resolve({
+      success: true,
+      data: {
+        totalRecords: 1248,
+        gradeARecords: 856,
+        dataDays: 365,
+        activeAdapters: 3,
+        recentRecords: []
+      }
+    })
+  }
 }
 
 // 导出单例

@@ -214,28 +214,30 @@ export default function CollectorsPage() {
                 </tr>
               </thead>
               <tbody>
-                {adapters.map(({ adapter, source }) => (
-                  <tr
-                    key={adapter.id}
-                    className={`h-14 border-b border-border transition-colors ${
-                      selected.includes(adapter.id)
-                        ? 'bg-accent/20'
-                        : 'hover:bg-accent/50'
-                    }`}
-                  >
-                    <td className="px-4">
-                      <Checkbox
-                        checked={selected.includes(adapter.id)}
-                        onCheckedChange={() => toggleSelect(adapter.id)}
-                      />
-                    </td>
-                    <td className="px-4 text-[13px] font-medium">{adapter.name}</td>
-                    <td className="px-4 text-[13px] text-muted-foreground">
-                      {source?.name || adapter.source_id}
-                    </td>
-                    <td className="px-4 text-[13px] text-muted-foreground font-mono">
-                      {adapter.topic_name}
-                    </td>
+                {adapters.map(({ adapter, source }) => {
+                  const adapterId = adapter?.id || ''
+                  return (
+                    <tr
+                      key={adapterId}
+                      className={`h-14 border-b border-border transition-colors ${
+                        selected.includes(adapterId)
+                          ? 'bg-accent/20'
+                          : 'hover:bg-accent/50'
+                      }`}
+                    >
+                      <td className="px-4">
+                        <Checkbox
+                          checked={selected.includes(adapterId)}
+                          onCheckedChange={() => toggleSelect(adapterId)}
+                        />
+                      </td>
+                      <td className="px-4 text-[13px] font-medium">{adapter.name}</td>
+                      <td className="px-4 text-[13px] text-muted-foreground">
+                        {source?.name || adapter.source_id}
+                      </td>
+                      <td className="px-4 text-[13px] text-muted-foreground font-mono">
+                        {adapter.topic_name}
+                      </td>
                     <td className="px-4">
                       <Badge
                         variant={
@@ -265,7 +267,7 @@ export default function CollectorsPage() {
                       <div className="flex items-center justify-end gap-3">
                         <button 
                           className="text-muted-foreground hover:text-foreground transition-colors"
-                          onClick={() => handleRun(adapter.id)}
+                          onClick={() => handleRun(adapterId)}
                           title="手动运行"
                         >
                           <Play className="w-4 h-4" />
@@ -273,7 +275,7 @@ export default function CollectorsPage() {
                         {adapter.status === 'running' ? (
                           <button 
                             className="text-muted-foreground hover:text-foreground transition-colors"
-                            onClick={() => handleStop(adapter.id)}
+                            onClick={() => handleStop(adapterId)}
                             title="停止"
                           >
                             <Pause className="w-4 h-4" />
@@ -281,7 +283,7 @@ export default function CollectorsPage() {
                         ) : (
                           <button 
                             className="text-muted-foreground hover:text-foreground transition-colors"
-                            onClick={() => handleStart(adapter.id)}
+                            onClick={() => handleStart(adapterId)}
                             title="启动"
                           >
                             <Play className="w-4 h-4" />
@@ -296,7 +298,7 @@ export default function CollectorsPage() {
                         </button>
                         <button 
                           className="text-muted-foreground hover:text-destructive transition-colors"
-                          onClick={() => handleDelete(adapter.id)}
+                          onClick={() => handleDelete(adapterId)}
                           title="删除"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -304,7 +306,8 @@ export default function CollectorsPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                )
+              })}
               </tbody>
             </table>
           </div>
