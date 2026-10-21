@@ -6,7 +6,7 @@
 # ============================================
 # Stage 1: Rust构建环境
 # ============================================
-FROM rust:1.83-bookworm as rust-builder
+FROM rust:bookworm as rust-builder
 
 WORKDIR /build
 
@@ -17,21 +17,13 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制Rust项目文件
-COPY backend-rust/Cargo.toml backend-rust/Cargo.lock ./backend-rust/
+# 复制Rust项目文件和锁定文件
+COPY backend-rust ./backend-rust/
 COPY core-rust ./core-rust/
 
-# 预构建依赖（缓存优化）
+# 使用 --locked 标志构建，强制使用 Cargo.lock 中的版本
 RUN cd backend-rust && \
-    mkdir src && \
-    echo "fn main() {}" > src/main.rs && \
-    cargo build --release && \
-    rm -rf src
-
-# 复制实际源码并构建
-COPY backend-rust/src ./backend-rust/src
-RUN cd backend-rust && \
-    cargo build --release && \
+    cargo build --release --locked && \
     strip target/release/corn-backend
 
 # ============================================
