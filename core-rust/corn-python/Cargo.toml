@@ -1,0 +1,16 @@
+[package]
+name = "corn-python"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "corn_rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3.workspace = true
+corn-domain = { path = "../corn-domain" }
+corn-infrastructure = { path = "../corn-infrastructure" }
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true

@@ -1,0 +1,41 @@
+[package]
+name = "corn-backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Web框架
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "fs"] }
+
+# 序列化
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Python集成 (暂时禁用，避免链接问题)
+# pyo3 = { version = "0.22", features = ["auto-initialize"] }
+
+# 日志
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# 工具
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1.0"
+thiserror = "1.0"
+dotenvy = "0.15"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+rust_decimal = "1.0"
+
+# 缓存和任务调度
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+tokio-cron-scheduler = "0.9"
+
+# 数据库
+sea-orm = { version = "1.0", features = ["sqlx-postgres", "runtime-tokio-native-tls", "macros"] }
+
+# 项目内部依赖 (暂时禁用，避免编译问题)
+# corn-domain = { path = "../core-rust/corn-domain" }
+# corn-infrastructure = { path = "../core-rust/corn-infrastructure" }

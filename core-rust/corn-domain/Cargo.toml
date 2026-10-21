@@ -1,0 +1,11 @@
+[package]
+name = "corn-domain"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+chrono.workspace = true
+rust_decimal = "1.33"
+rust_decimal_macros = "1.33"
+thiserror.workspace = true
+serde.workspace = true

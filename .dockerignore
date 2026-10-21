@@ -1,0 +1,47 @@
+# Rust
+target/
+**/*.rs.bk
+*.pdb
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+
+# Node.js
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# macOS
+.DS_Store
+
+# 数据文件
+*.csv
+*.json
+data/
+
+# 文档
+docs/
+*.md
+!README.md
+
+# 测试
+.pytest_cache/
+.coverage
+htmlcov/
