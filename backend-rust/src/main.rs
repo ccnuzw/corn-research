@@ -23,6 +23,7 @@ mod models;
 mod db;
 mod standardization;
 mod lineage_handlers;
+mod collection_handlers;
 
 use scheduler::JobManager;
 use notification::NotificationService;
@@ -111,7 +112,34 @@ async fn main() {
         // 健康检查
         .route("/health", get(health_check))
         
-        // 采集器API
+        // 采集管理API - 数据源
+        .route("/api/sources", get(collection_handlers::list_sources))
+        .route("/api/sources", post(collection_handlers::create_source))
+        .route("/api/sources/:id", get(collection_handlers::get_source))
+        .route("/api/sources/:id", axum::routing::put(collection_handlers::update_source))
+        .route("/api/sources/:id", axum::routing::delete(collection_handlers::delete_source))
+        
+        // 采集管理API - 适配器
+        .route("/api/adapters", get(collection_handlers::list_adapters))
+        .route("/api/adapters", post(collection_handlers::create_adapter))
+        .route("/api/adapters/:id", get(collection_handlers::get_adapter))
+        .route("/api/adapters/:id", axum::routing::put(collection_handlers::update_adapter))
+        .route("/api/adapters/:id", axum::routing::delete(collection_handlers::delete_adapter))
+        .route("/api/adapters/:id/run", post(collection_handlers::run_adapter))
+        .route("/api/adapters/:id/start", post(collection_handlers::start_adapter))
+        .route("/api/adapters/:id/stop", post(collection_handlers::stop_adapter))
+        .route("/api/adapters/:id/runs", get(collection_handlers::get_adapter_runs))
+        .route("/api/adapters/:id/records", get(collection_handlers::get_adapter_records))
+        
+        // 采集管理API - 数据主题
+        .route("/api/topics", get(collection_handlers::list_topics))
+        .route("/api/topics/:name", get(collection_handlers::get_topic))
+        .route("/api/topics/:name/records", get(collection_handlers::get_topic_records))
+        
+        // 采集管理API - 记录查询
+        .route("/api/records", get(collection_handlers::query_records))
+        
+        // 采集器API (保留原有)
         .route("/api/collectors", get(handlers::list_collectors))
         .route("/api/collectors/:id/run", post(handlers::run_collector))
         .route("/api/collectors/:id/history", get(handlers::get_collector_history))

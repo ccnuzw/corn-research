@@ -59,9 +59,9 @@ export default function MonitorPage() {
         api.getIndicators(),
       ])
 
-      setData(dataResult || [])
-      setStats(statsResult)
-      setIndicators(indicatorsResult || [])
+      setData(dataResult as unknown as MarketData[] || [])
+      setStats(statsResult as unknown as DataStats | null)
+      setIndicators(indicatorsResult as unknown as Indicator[] || [])
     } catch (error) {
       console.error('Failed to load data:', error)
     } finally {

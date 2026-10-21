@@ -67,7 +67,7 @@ pub async fn run_collector(
     ).await;
     
     // 调用Python采集器
-    let result = python_bridge::run_python_collector(&collector_id).await
+    let result = python_bridge::run_python_collector(&collector_id, Some(100)).await
         .map_err(|e| CornError::Python(e))?;
     
     // 发送采集完成通知

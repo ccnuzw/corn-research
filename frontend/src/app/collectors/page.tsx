@@ -1,70 +1,41 @@
-// 采集器管理页面 - 展示完整表格组件
+// 采集器管理页面 - 连接真实API
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { AppLayout } from '@/components/layout/app-layout'
 import { Breadcrumb } from '@/components/ui/breadcrumb'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Database, Plus, Play, Pause, Trash2, RefreshCw, Download, Settings } from 'lucide-react'
-
-interface Collector {
-  id: string
-  name: string
-  source: string
-  status: 'running' | 'idle' | 'error'
-  lastRun: string
-  nextRun: string
-  records: number
-  successRate: number
-}
-
-const MOCK_COLLECTORS: Collector[] = [
-  {
-    id: '1',
-    name: '博亚和讯-山东到车',
-    source: 'boyar.cn',
-    status: 'running',
-    lastRun: '2分钟前',
-    nextRun: '58分钟后',
-    records: 1234,
-    successRate: 98.5,
-  },
-  {
-    id: '2',
-    name: '新浪财经-北港周报',
-    source: 'finance.sina.com.cn',
-    status: 'idle',
-    lastRun: '1小时前',
-    nextRun: '23小时后',
-    records: 567,
-    successRate: 100,
-  },
-  {
-    id: '3',
-    name: 'DCE官网-期货行情',
-    source: 'dce.com.cn',
-    status: 'running',
-    lastRun: '刚刚',
-    nextRun: '5分钟后',
-    records: 8901,
-    successRate: 99.2,
-  },
-  {
-    id: '4',
-    name: '网易订阅-市场快讯',
-    source: 'dy.163.com',
-    status: 'error',
-    lastRun: '30分钟前',
-    nextRun: '-',
-    records: 234,
-    successRate: 85.3,
-  },
-]
+import { api, type AdapterWithSource } from '@/lib/api'
 
 export default function CollectorsPage() {
+  const [adapters, setAdapters] = useState<AdapterWithSource[]>([])
   const [selected, setSelected] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const loadAdapters = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const response = await api.listAdapters()
+      if (response.success && response.data) {
+        setAdapters(response.data)
+      } else {
+        setError(response.message || 'Failed to load adapters')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadAdapters()
+  }, [])
 
   const toggleSelect = (id: string) => {
     setSelected(prev =>
@@ -74,8 +45,77 @@ export default function CollectorsPage() {
 
   const toggleSelectAll = () => {
     setSelected(prev =>
-      prev.length === MOCK_COLLECTORS.length ? [] : MOCK_COLLECTORS.map(c => c.id)
+      prev.length === adapters.length ? [] : adapters.map(a => a.adapter.id)
     )
+  }
+
+  const handleRun = async (id: string) => {
+    try {
+      const response = await api.runAdapter(id)
+      if (response.success) {
+        alert(`采集已启动: ${response.data?.message}`)
+        loadAdapters()
+      } else {
+        alert(`启动失败: ${response.message}`)
+      }
+    } catch (err) {
+      alert(`启动失败: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
+  }
+
+  const handleStart = async (id: string) => {
+    try {
+      const response = await api.startAdapter(id)
+      if (response.success) {
+        loadAdapters()
+      }
+    } catch (err) {
+      alert(`操作失败: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
+  }
+
+  const handleStop = async (id: string) => {
+    try {
+      const response = await api.stopAdapter(id)
+      if (response.success) {
+        loadAdapters()
+      }
+    } catch (err) {
+      alert(`操作失败: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('确定要删除这个采集器吗？')) return
+
+    try {
+      const response = await api.deleteAdapter(id)
+      if (response.success) {
+        loadAdapters()
+      }
+    } catch (err) {
+      alert(`删除失败: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
+  }
+
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return '-'
+    const date = new Date(dateStr)
+    const now = new Date()
+    const diff = now.getTime() - date.getTime()
+    const minutes = Math.floor(diff / 60000)
+    const hours = Math.floor(diff / 3600000)
+    const days = Math.floor(diff / 86400000)
+
+    if (minutes < 1) return '刚刚'
+    if (minutes < 60) return `${minutes}分钟前`
+    if (hours < 24) return `${hours}小时前`
+    return `${days}天前`
+  }
+
+  const getSuccessRate = (adapter: AdapterWithSource['adapter']) => {
+    if (adapter.total_runs === 0) return 0
+    return ((adapter.successful_runs / adapter.total_runs) * 100).toFixed(1)
   }
 
   return (
@@ -92,134 +132,183 @@ export default function CollectorsPage() {
         {/* 工具栏 */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Button size="sm">
+            <Button size="sm" onClick={() => alert('创建功能开发中')}>
               <Plus className="w-4 h-4" />
               新建采集器
             </Button>
-            <Button variant="outline" size="sm">
-              <RefreshCw className="w-4 h-4" />
+            <Button variant="outline" size="sm" onClick={loadAdapters} disabled={loading}>
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               刷新
             </Button>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={() => alert('导出功能开发中')}>
               <Download className="w-4 h-4" />
               导出
             </Button>
           </div>
 
           <div className="text-[12px] text-muted-foreground">
-            共 {MOCK_COLLECTORS.length} 个采集器
+            共 {adapters.length} 个采集器
           </div>
         </div>
 
+        {/* 错误提示 */}
+        {error && (
+          <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 text-sm text-destructive">
+            {error}
+          </div>
+        )}
+
+        {/* 加载中 */}
+        {loading && adapters.length === 0 && (
+          <div className="text-center py-12 text-muted-foreground">
+            <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2" />
+            加载中...
+          </div>
+        )}
+
+        {/* 空状态 */}
+        {!loading && adapters.length === 0 && !error && (
+          <div className="text-center py-12 text-muted-foreground">
+            <Database className="w-12 h-12 mx-auto mb-4 opacity-20" />
+            <p>还没有采集器</p>
+            <p className="text-xs mt-1">点击上方"新建采集器"按钮创建第一个采集器</p>
+          </div>
+        )}
+
         {/* 表格 */}
-        <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-muted/50">
-              <tr className="h-11">
-                <th className="w-12 px-4">
-                  <Checkbox
-                    checked={selected.length === MOCK_COLLECTORS.length}
-                    onCheckedChange={toggleSelectAll}
-                  />
-                </th>
-                <th className="px-4 text-left text-[12px] font-medium text-muted-foreground">
-                  采集器名称
-                </th>
-                <th className="px-4 text-left text-[12px] font-medium text-muted-foreground">
-                  数据源
-                </th>
-                <th className="px-4 text-left text-[12px] font-medium text-muted-foreground">
-                  状态
-                </th>
-                <th className="px-4 text-left text-[12px] font-medium text-muted-foreground">
-                  上次运行
-                </th>
-                <th className="px-4 text-left text-[12px] font-medium text-muted-foreground">
-                  下次运行
-                </th>
-                <th className="px-4 text-right text-[12px] font-medium text-muted-foreground">
-                  采集量
-                </th>
-                <th className="px-4 text-right text-[12px] font-medium text-muted-foreground">
-                  成功率
-                </th>
-                <th className="px-4 text-right text-[12px] font-medium text-muted-foreground">
-                  操作
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {MOCK_COLLECTORS.map(collector => (
-                <tr
-                  key={collector.id}
-                  className={`h-14 border-b border-border transition-colors ${
-                    selected.includes(collector.id)
-                      ? 'bg-accent/20'
-                      : 'hover:bg-accent/50'
-                  }`}
-                >
-                  <td className="px-4">
+        {adapters.length > 0 && (
+          <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-muted/50">
+                <tr className="h-11">
+                  <th className="w-12 px-4">
                     <Checkbox
-                      checked={selected.includes(collector.id)}
-                      onCheckedChange={() => toggleSelect(collector.id)}
+                      checked={selected.length === adapters.length}
+                      onCheckedChange={toggleSelectAll}
                     />
-                  </td>
-                  <td className="px-4 text-[13px] font-medium">{collector.name}</td>
-                  <td className="px-4 text-[13px] text-muted-foreground font-mono">
-                    {collector.source}
-                  </td>
-                  <td className="px-4">
-                    <Badge
-                      variant={
-                        collector.status === 'running'
-                          ? 'success'
-                          : collector.status === 'error'
-                          ? 'destructive'
-                          : 'secondary'
-                      }
-                      className="rounded-full"
-                    >
-                      {collector.status === 'running' && '运行中'}
-                      {collector.status === 'idle' && '空闲'}
-                      {collector.status === 'error' && '错误'}
-                    </Badge>
-                  </td>
-                  <td className="px-4 text-[13px] text-muted-foreground">
-                    {collector.lastRun}
-                  </td>
-                  <td className="px-4 text-[13px] text-muted-foreground">
-                    {collector.nextRun}
-                  </td>
-                  <td className="px-4 text-right text-[13px] font-mono">
-                    {collector.records.toLocaleString()}
-                  </td>
-                  <td className="px-4 text-right text-[13px] font-mono">
-                    {collector.successRate}%
-                  </td>
-                  <td className="px-4">
-                    <div className="flex items-center justify-end gap-3">
-                      {collector.status === 'running' ? (
-                        <button className="text-muted-foreground hover:text-foreground transition-colors">
-                          <Pause className="w-4 h-4" />
-                        </button>
-                      ) : (
-                        <button className="text-muted-foreground hover:text-foreground transition-colors">
+                  </th>
+                  <th className="px-4 text-left text-[12px] font-medium text-muted-foreground">
+                    采集器名称
+                  </th>
+                  <th className="px-4 text-left text-[12px] font-medium text-muted-foreground">
+                    数据源
+                  </th>
+                  <th className="px-4 text-left text-[12px] font-medium text-muted-foreground">
+                    主题
+                  </th>
+                  <th className="px-4 text-left text-[12px] font-medium text-muted-foreground">
+                    状态
+                  </th>
+                  <th className="px-4 text-left text-[12px] font-medium text-muted-foreground">
+                    上次运行
+                  </th>
+                  <th className="px-4 text-right text-[12px] font-medium text-muted-foreground">
+                    运行次数
+                  </th>
+                  <th className="px-4 text-right text-[12px] font-medium text-muted-foreground">
+                    成功率
+                  </th>
+                  <th className="px-4 text-right text-[12px] font-medium text-muted-foreground">
+                    操作
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {adapters.map(({ adapter, source }) => (
+                  <tr
+                    key={adapter.id}
+                    className={`h-14 border-b border-border transition-colors ${
+                      selected.includes(adapter.id)
+                        ? 'bg-accent/20'
+                        : 'hover:bg-accent/50'
+                    }`}
+                  >
+                    <td className="px-4">
+                      <Checkbox
+                        checked={selected.includes(adapter.id)}
+                        onCheckedChange={() => toggleSelect(adapter.id)}
+                      />
+                    </td>
+                    <td className="px-4 text-[13px] font-medium">{adapter.name}</td>
+                    <td className="px-4 text-[13px] text-muted-foreground">
+                      {source?.name || adapter.source_id}
+                    </td>
+                    <td className="px-4 text-[13px] text-muted-foreground font-mono">
+                      {adapter.topic_name}
+                    </td>
+                    <td className="px-4">
+                      <Badge
+                        variant={
+                          adapter.status === 'running'
+                            ? 'success'
+                            : adapter.status === 'error'
+                            ? 'destructive'
+                            : 'secondary'
+                        }
+                        className="rounded-full"
+                      >
+                        {adapter.status === 'running' && '运行中'}
+                        {adapter.status === 'stopped' && '已停止'}
+                        {adapter.status === 'error' && '错误'}
+                      </Badge>
+                    </td>
+                    <td className="px-4 text-[13px] text-muted-foreground">
+                      {formatDate(adapter.last_run_at)}
+                    </td>
+                    <td className="px-4 text-right text-[13px] font-mono">
+                      {adapter.total_runs}
+                    </td>
+                    <td className="px-4 text-right text-[13px] font-mono">
+                      {getSuccessRate(adapter)}%
+                    </td>
+                    <td className="px-4">
+                      <div className="flex items-center justify-end gap-3">
+                        <button 
+                          className="text-muted-foreground hover:text-foreground transition-colors"
+                          onClick={() => handleRun(adapter.id)}
+                          title="手动运行"
+                        >
                           <Play className="w-4 h-4" />
                         </button>
-                      )}
-                      <button className="text-muted-foreground hover:text-foreground transition-colors">
-                        <Settings className="w-4 h-4" />
-                      </button>
-                      <button className="text-muted-foreground hover:text-destructive transition-colors">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                        {adapter.status === 'running' ? (
+                          <button 
+                            className="text-muted-foreground hover:text-foreground transition-colors"
+                            onClick={() => handleStop(adapter.id)}
+                            title="停止"
+                          >
+                            <Pause className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <button 
+                            className="text-muted-foreground hover:text-foreground transition-colors"
+                            onClick={() => handleStart(adapter.id)}
+                            title="启动"
+                          >
+                            <Play className="w-4 h-4" />
+                          </button>
+                        )}
+                        <button 
+                          className="text-muted-foreground hover:text-foreground transition-colors"
+                          onClick={() => alert('配置功能开发中')}
+                          title="配置"
+                        >
+                          <Settings className="w-4 h-4" />
+                        </button>
+                        <button 
+                          className="text-muted-foreground hover:text-destructive transition-colors"
+                          onClick={() => handleDelete(adapter.id)}
+                          title="删除"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {/* 悬浮工具栏 */}
         {selected.length > 0 && (
@@ -229,15 +318,23 @@ export default function CollectorsPage() {
                 已选 {selected.length} 项
               </div>
               <div className="w-px h-5 bg-border" />
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" onClick={() => alert('批量启动功能开发中')}>
                 <Play className="w-4 h-4" />
                 批量启动
               </Button>
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" onClick={() => alert('批量停止功能开发中')}>
                 <Pause className="w-4 h-4" />
                 批量停止
               </Button>
-              <Button variant="destructive" size="sm">
+              <Button 
+                variant="destructive" 
+                size="sm"
+                onClick={() => {
+                  if (confirm(`确定要删除选中的 ${selected.length} 个采集器吗？`)) {
+                    alert('批量删除功能开发中')
+                  }
+                }}
+              >
                 <Trash2 className="w-4 h-4" />
                 批量删除
               </Button>

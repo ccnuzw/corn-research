@@ -1,0 +1,240 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Plus, Play, Square, Trash2, RefreshCw } from 'lucide-react';
+
+// API Base URL
+const API_BASE = 'http://localhost:18000';
+
+const mockAdapters = [
+  {
+    id: 'boyar_shandong',
+    name: '山东到车量采集器',
+    script_file: 'boyar_shandong.py',
+    source_id: 'boyar',
+    source_name: '博亚和讯',
+    topic_name: '山东到车量',
+    status: 'stopped',
+    total_runs: 45,
+    successful_runs: 43,
+    failed_runs: 2,
+    last_run_at: '2026-10-20 08:00:00',
+  },
+  {
+    id: 'sina_port',
+    name: '北方四港库存采集器',
+    script_file: 'sina_port.py',
+    source_id: 'sina',
+    source_name: '新浪财经',
+    topic_name: '北方四港库存',
+    status: 'running',
+    total_runs: 120,
+    successful_runs: 118,
+    failed_runs: 2,
+    last_run_at: '2026-10-21 07:30:00',
+  },
+  {
+    id: 'dce_futures',
+    name: 'DCE期货价格采集器',
+    script_file: 'dce_futures.py',
+    source_id: 'dce',
+    source_name: '大商所',
+    topic_name: '玉米期货价格',
+    status: 'stopped',
+    total_runs: 89,
+    successful_runs: 89,
+    failed_runs: 0,
+    last_run_at: '2026-10-20 15:00:00',
+  },
+];
+
+const mockTopics = [
+  { name: '山东到车量', adapter_count: 1, record_count: 245 },
+  { name: '北方四港库存', adapter_count: 1, record_count: 680 },
+  { name: '玉米期货价格', adapter_count: 1, record_count: 1205 },
+];
+
+export default function CollectionPage() {
+  const [activeTab, setActiveTab] = useState('adapters');
+
+  const getStatusBadge = (status: string) => {
+    const variants: Record<string, { label: string; className: string }> = {
+      running: { label: '运行中', className: 'bg-green-500' },
+      stopped: { label: '已停止', className: 'bg-gray-500' },
+      error: { label: '错误', className: 'bg-red-500' },
+      active: { label: '活跃', className: 'bg-blue-500' },
+      inactive: { label: '未激活', className: 'bg-gray-400' },
+    };
+    const variant = variants[status] || variants.stopped;
+    return <Badge className={variant.className}>{variant.label}</Badge>;
+  };
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">采集管理</h1>
+          <p className="text-muted-foreground mt-1">
+            管理数据源、采集适配器和数据主题
+          </p>
+        </div>
+        <Button className="gap-2">
+          <Plus className="w-4 h-4" />
+          新建适配器
+        </Button>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <TabsList className="grid w-full max-w-md grid-cols-3">
+          <TabsTrigger value="adapters">适配器</TabsTrigger>
+          <TabsTrigger value="sources">数据源</TabsTrigger>
+          <TabsTrigger value="topics">数据主题</TabsTrigger>
+        </TabsList>
+
+        {/* 适配器列表 */}
+        <TabsContent value="adapters" className="space-y-4">
+          {mockAdapters.map((adapter) => (
+            <Card key={adapter.id} className="p-6">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <h3 className="text-xl font-semibold">{adapter.name}</h3>
+                    {getStatusBadge(adapter.status)}
+                  </div>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 text-sm">
+                    <div>
+                      <div className="text-muted-foreground">数据源</div>
+                      <div className="font-medium">{adapter.source_name}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">数据主题</div>
+                      <div className="font-medium">{adapter.topic_name}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">脚本文件</div>
+                      <div className="font-mono text-xs">{adapter.script_file}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">最后运行</div>
+                      <div className="text-xs">{adapter.last_run_at}</div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-6 mt-4 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">总运行: </span>
+                      <span className="font-medium">{adapter.total_runs}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">成功: </span>
+                      <span className="font-medium text-green-600">{adapter.successful_runs}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">失败: </span>
+                      <span className="font-medium text-red-600">{adapter.failed_runs}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">成功率: </span>
+                      <span className="font-medium">
+                        {((adapter.successful_runs / adapter.total_runs) * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  {adapter.status === 'running' ? (
+                    <Button variant="outline" size="sm" className="gap-2">
+                      <Square className="w-4 h-4" />
+                      停止
+                    </Button>
+                  ) : (
+                    <Button variant="outline" size="sm" className="gap-2">
+                      <Play className="w-4 h-4" />
+                      启动
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" className="gap-2">
+                    <RefreshCw className="w-4 h-4" />
+                    手动运行
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-2 text-red-600 hover:text-red-700">
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </TabsContent>
+
+        {/* 数据源列表 */}
+        <TabsContent value="sources" className="space-y-4">
+          {mockSources.map((source) => (
+            <Card key={source.id} className="p-6">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <h3 className="text-xl font-semibold">{source.name}</h3>
+                    {getStatusBadge(source.status)}
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4 mt-4 text-sm">
+                    <div>
+                      <div className="text-muted-foreground">域名</div>
+                      <div className="font-medium">{source.domain}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">描述</div>
+                      <div>{source.description}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm">编辑</Button>
+                  <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700">
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </TabsContent>
+
+        {/* 数据主题列表 */}
+        <TabsContent value="topics" className="space-y-4">
+          {mockTopics.map((topic) => (
+            <Card key={topic.name} className="p-6">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <h3 className="text-xl font-semibold mb-4">{topic.name}</h3>
+                  
+                  <div className="flex gap-8 text-sm">
+                    <div>
+                      <div className="text-muted-foreground">采集适配器数量</div>
+                      <div className="text-2xl font-bold mt-1">{topic.adapter_count}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">采集记录数量</div>
+                      <div className="text-2xl font-bold mt-1">{topic.record_count}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm">查看数据</Button>
+                  <Button variant="outline" size="sm">查看适配器</Button>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}

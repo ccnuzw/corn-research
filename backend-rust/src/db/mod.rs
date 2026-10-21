@@ -1,6 +1,7 @@
 //! Database connection and utilities
 
 pub mod entities;
+pub mod collection_entities;
 
 use sea_orm::{Database, DatabaseConnection, DbErr};
 
