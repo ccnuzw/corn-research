@@ -6,415 +6,205 @@ import { AppLayout } from '@/components/layout/app-layout'
 import { Breadcrumb } from '@/components/ui/breadcrumb'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
-import { Switch } from '@/components/ui/switch'
-import { Clock, Plus, Play, Edit, Trash2, Calendar } from 'lucide-react'
-import { api, type ScheduledJob } from '@/lib/api'
+import { Clock, Plus, Play, Pause, Trash2, RefreshCw } from 'lucide-react'
 
-interface Collector {
+interface Job {
   id: string
   name: string
+  collector_id: string
+  cron_expression: string
+  enabled: boolean
+  next_run: string | null
+  last_run: string | null
+  status: 'running' | 'waiting' | 'stopped'
 }
 
-// Cron表达式预设
-const CRON_PRESETS = [
-  { label: '每天 8:00', value: '0 0 8 * * *' },
-  { label: '每天 12:00', value: '0 0 12 * * *' },
-  { label: '每天 18:00', value: '0 0 18 * * *' },
-  { label: '每小时', value: '0 0 * * * *' },
-  { label: '每30分钟', value: '0 */30 * * * *' },
-  { label: '每周一 9:00', value: '0 0 9 * * 1' },
-  { label: '自定义', value: 'custom' },
-]
-
-const COLLECTORS: Collector[] = [
-  { id: 'boyar', name: '博亚和讯' },
-  { id: 'sina', name: '新浪财经' },
-  { id: 'dce', name: 'DCE官网' },
-  { id: 'netease', name: '网易订阅' },
+const MOCK_JOBS: Job[] = [
+  {
+    id: '1',
+    name: '每日早8点采集',
+    collector_id: 'boyar_production',
+    cron_expression: '0 8 * * *',
+    enabled: true,
+    next_run: '明天 08:00',
+    last_run: '今天 08:00',
+    status: 'waiting',
+  },
+  {
+    id: '2',
+    name: '每小时采集',
+    collector_id: 'sina_production',
+    cron_expression: '0 * * * *',
+    enabled: true,
+    next_run: '12分钟后',
+    last_run: '48分钟前',
+    status: 'waiting',
+  },
+  {
+    id: '3',
+    name: '每周一采集',
+    collector_id: 'dce',
+    cron_expression: '0 9 * * 1',
+    enabled: false,
+    next_run: null,
+    last_run: '上周一 09:00',
+    status: 'stopped',
+  },
 ]
 
 export default function SchedulerPage() {
-  const [jobs, setJobs] = useState<ScheduledJob[]>([])
-  const [loading, setLoading] = useState(true)
-  const [showDialog, setShowDialog] = useState(false)
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-  const [selectedJob, setSelectedJob] = useState<string | null>(null)
-  
-  // 表单状态
-  const [formData, setFormData] = useState({
-    name: '',
-    collector_id: '',
-    cron_expression: '0 0 8 * * *',
-    description: '',
-    enabled: true,
-  })
-  const [cronPreset, setCronPreset] = useState('0 0 8 * * *')
+  const [jobs, setJobs] = useState<Job[]>(MOCK_JOBS)
+  const [loading, setLoading] = useState(false)
 
-  // 加载任务列表
-  const loadJobs = async () => {
-    try {
-      const data = await api.getJobs()
-      setJobs(data || [])
-    } catch (error) {
-      console.error('Failed to load jobs:', error)
-    } finally {
-      setLoading(false)
+  const parseCronExpression = (cron: string) => {
+    // 简单的 cron 表达式解析
+    const parts = cron.split(' ')
+    if (parts.length !== 5) return cron
+    
+    const [minute, hour, day, month, weekday] = parts
+    
+    if (minute === '0' && hour !== '*' && day === '*' && month === '*' && weekday === '*') {
+      return `每天 ${hour.padStart(2, '0')}:00`
     }
-  }
-
-  useEffect(() => {
-    loadJobs()
-    const interval = setInterval(loadJobs, 30000) // 每30秒刷新
-    return () => clearInterval(interval)
-  }, [])
-
-  // 创建任务
-  const handleCreateJob = async () => {
-    try {
-      await api.createJob({
-        name: formData.name,
-        collector_id: formData.collector_id,
-        cron_expression: formData.cron_expression,
-        description: formData.description,
-        enabled: formData.enabled,
-      })
-      setShowDialog(false)
-      loadJobs()
-      // 重置表单
-      setFormData({
-        name: '',
-        collector_id: '',
-        cron_expression: '0 0 8 * * *',
-        description: '',
-        enabled: true,
-      })
-      setCronPreset('0 0 8 * * *')
-    } catch (error) {
-      console.error('Failed to create job:', error)
-      alert('创建失败')
+    if (minute === '0' && hour === '*') {
+      return '每小时'
     }
-  }
-
-  // 删除任务
-  const handleDeleteJob = async () => {
-    if (!selectedJob) return
-    try {
-      await api.deleteJob(selectedJob)
-      setShowDeleteDialog(false)
-      setSelectedJob(null)
-      loadJobs()
-    } catch (error) {
-      console.error('Failed to delete job:', error)
-      alert('删除失败')
+    if (weekday !== '*') {
+      const days = ['日', '一', '二', '三', '四', '五', '六']
+      return `每周${days[parseInt(weekday)]} ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`
     }
-  }
-
-  // 切换任务启用状态
-  const handleToggleJob = async (jobId: string, enabled: boolean) => {
-    try {
-      await api.toggleJob(jobId, enabled)
-      loadJobs()
-    } catch (error) {
-      console.error('Failed to toggle job:', error)
-      alert('操作失败')
-    }
-  }
-
-  // 手动触发任务
-  const handleTriggerJob = async (jobId: string) => {
-    try {
-      await api.triggerJob(jobId)
-      alert('任务已触发')
-      loadJobs()
-    } catch (error) {
-      console.error('Failed to trigger job:', error)
-      alert('触发失败')
-    }
-  }
-
-  const formatDate = (dateStr?: string) => {
-    if (!dateStr) return '-'
-    return new Date(dateStr).toLocaleString('zh-CN')
-  }
-
-  const getSuccessRate = (job: ScheduledJob) => {
-    if (job.total_runs === 0) return '-'
-    return `${((job.success_count / job.total_runs) * 100).toFixed(1)}%`
+    return cron
   }
 
   return (
-    <AppLayout title="定时任务管理">
+    <AppLayout title="定时任务">
       <div className="space-y-4">
         {/* 面包屑 */}
         <Breadcrumb
           items={[
             { label: '控制台', href: '/' },
-            { label: '定时任务管理', icon: <Clock className="w-4 h-4" /> },
+            { label: '定时任务', icon: <Clock className="w-4 h-4" /> },
           ]}
         />
 
         {/* 工具栏 */}
         <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-card-foreground">定时任务</h2>
-            <p className="text-sm text-muted-foreground">共 {jobs.length} 个任务</p>
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={() => alert('创建功能开发中')}>
+              <Plus className="w-4 h-4" />
+              新建任务
+            </Button>
+            <Button variant="outline" size="sm" disabled={loading}>
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              刷新
+            </Button>
           </div>
-          <Button size="sm" onClick={() => setShowDialog(true)}>
-            <Plus className="w-4 h-4" />
-            新建任务
-          </Button>
+
+          <div className="text-[12px] text-muted-foreground">
+            共 {jobs.length} 个定时任务，{jobs.filter(j => j.enabled).length} 个启用
+          </div>
         </div>
 
         {/* 任务列表 */}
-        <div className="bg-card rounded-lg border border-border">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-border">
-              <thead className="bg-muted/30">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
-                    任务名称
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
-                    采集器
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
-                    Cron表达式
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
-                    状态
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
-                    上次运行
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase">
-                    成功率
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase">
-                    操作
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-card divide-y divide-border">
-                {loading ? (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-sm text-muted-foreground">
-                      加载中...
-                    </td>
-                  </tr>
-                ) : jobs.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-sm text-muted-foreground">
-                      暂无定时任务
-                    </td>
-                  </tr>
-                ) : (
-                  jobs.map((job) => (
-                    <tr key={job.id} className="hover:bg-muted/30">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-card-foreground">{job.name}</div>
-                        {job.description && (
-                          <div className="text-xs text-muted-foreground">{job.description}</div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-card-foreground">
-                          {job.collector_id ? (
-                            COLLECTORS.find(c => c.id === job.collector_id)?.name || job.collector_id
-                          ) : (
-                            <span className="text-gray-400">多采集器</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <code className="text-xs bg-muted px-2 py-1 rounded">
-                          {job.cron_expression}
-                        </code>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <Switch
-                            checked={job.enabled}
-                            onCheckedChange={(checked) => handleToggleJob(job.id, checked)}
-                          />
-                          <Badge variant={job.enabled ? 'default' : 'secondary'}>
-                            {job.enabled ? '启用' : '禁用'}
-                          </Badge>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-card-foreground">{formatDate(job.last_run)}</div>
-                        <div className="text-xs text-muted-foreground">
-                          运行 {job.total_runs} 次
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-card-foreground">{getSuccessRate(job)}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleTriggerJob(job.id)}
-                          >
-                            <Play className="w-3 h-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setSelectedJob(job.id)
-                              setShowDeleteDialog(true)
-                            }}
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      {/* 创建任务对话框 */}
-      <Dialog open={showDialog} onOpenChange={setShowDialog}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>新建定时任务</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">任务名称</Label>
-              <Input
-                id="name"
-                placeholder="例如：每日采集博亚数据"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="collector">采集器</Label>
-              <Select
-                value={formData.collector_id}
-                onValueChange={(value) => setFormData({ ...formData, collector_id: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="选择采集器" />
-                </SelectTrigger>
-                <SelectContent>
-                  {COLLECTORS.map((collector) => (
-                    <SelectItem key={collector.id} value={collector.id}>
-                      {collector.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="cron-preset">执行时间</Label>
-              <Select
-                value={cronPreset}
-                onValueChange={(value) => {
-                  setCronPreset(value)
-                  if (value !== 'custom') {
-                    setFormData({ ...formData, cron_expression: value })
-                  }
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CRON_PRESETS.map((preset) => (
-                    <SelectItem key={preset.value} value={preset.value}>
-                      {preset.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {cronPreset === 'custom' && (
-              <div className="space-y-2">
-                <Label htmlFor="cron">Cron表达式</Label>
-                <Input
-                  id="cron"
-                  placeholder="0 0 8 * * *"
-                  value={formData.cron_expression}
-                  onChange={(e) => setFormData({ ...formData, cron_expression: e.target.value })}
-                />
-                <p className="text-xs text-muted-foreground">
-                  格式：秒 分 时 日 月 周（例如：0 0 8 * * * = 每天8:00）
-                </p>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label htmlFor="description">描述（可选）</Label>
-              <Textarea
-                id="description"
-                placeholder="任务描述"
-                rows={3}
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              />
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <Switch
-                id="enabled"
-                checked={formData.enabled}
-                onCheckedChange={(checked) => setFormData({ ...formData, enabled: checked })}
-              />
-              <Label htmlFor="enabled">创建后立即启用</Label>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDialog(false)}>
-              取消
-            </Button>
-            <Button 
-              onClick={handleCreateJob}
-              disabled={!formData.name || !formData.collector_id || !formData.cron_expression}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {jobs.map((job) => (
+            <div
+              key={job.id}
+              className="rounded-lg border border-border/60 bg-card p-4 hover:shadow-lg transition-all"
             >
-              创建任务
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <h3 className="font-semibold text-sm">{job.name}</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5 font-mono">
+                    {job.collector_id}
+                  </p>
+                </div>
+                <Badge
+                  variant={
+                    job.status === 'running'
+                      ? 'default'
+                      : job.status === 'stopped'
+                      ? 'secondary'
+                      : 'outline'
+                  }
+                  className="rounded-full"
+                >
+                  {job.status === 'running' && '运行中'}
+                  {job.status === 'waiting' && '等待中'}
+                  {job.status === 'stopped' && '已停止'}
+                </Badge>
+              </div>
 
-      {/* 删除确认对话框 */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle>确认删除</DialogTitle>
-          </DialogHeader>
-          <div className="py-4">
-            <p className="text-sm text-muted-foreground">
-              确定要删除这个定时任务吗？此操作无法撤销。
-            </p>
+              <div className="space-y-2 mb-4">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">
+                    {parseCronExpression(job.cron_expression)}
+                  </span>
+                </div>
+                {job.next_run && (
+                  <div className="text-xs">
+                    <span className="text-muted-foreground">下次运行: </span>
+                    <span className="font-medium">{job.next_run}</span>
+                  </div>
+                )}
+                {job.last_run && (
+                  <div className="text-xs">
+                    <span className="text-muted-foreground">上次运行: </span>
+                    <span>{job.last_run}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                {job.enabled ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => alert('暂停功能开发中')}
+                  >
+                    <Pause className="w-3.5 h-3.5" />
+                    暂停
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => alert('启动功能开发中')}
+                  >
+                    <Play className="w-3.5 h-3.5" />
+                    启动
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => alert('立即运行功能开发中')}
+                >
+                  <Play className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => alert('删除功能开发中')}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {jobs.length === 0 && (
+          <div className="text-center py-12 text-muted-foreground">
+            <Clock className="w-12 h-12 mx-auto mb-4 opacity-20" />
+            <p>还没有定时任务</p>
+            <p className="text-xs mt-1">点击上方"新建任务"按钮创建第一个任务</p>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
-              取消
-            </Button>
-            <Button variant="destructive" onClick={handleDeleteJob}>
-              删除
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        )}
+      </div>
     </AppLayout>
   )
 }

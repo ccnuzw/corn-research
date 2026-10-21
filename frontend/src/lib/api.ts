@@ -213,6 +213,27 @@ class ApiClient {
     const query = limit ? `?limit=${limit}` : ''
     return this.request<CollectionRecord[]>(`/api/adapters/${id}/records${query}`)
   }
+
+  // 通用记录查询
+  async queryRecords(params?: {
+    adapter_id?: string
+    topic?: string
+    start_date?: string
+    end_date?: string
+    quality?: string
+    limit?: number
+  }) {
+    const searchParams = new URLSearchParams()
+    if (params?.adapter_id) searchParams.set('adapter_id', params.adapter_id)
+    if (params?.topic) searchParams.set('topic', params.topic)
+    if (params?.start_date) searchParams.set('start_date', params.start_date)
+    if (params?.end_date) searchParams.set('end_date', params.end_date)
+    if (params?.quality) searchParams.set('quality', params.quality)
+    if (params?.limit) searchParams.set('limit', params.limit.toString())
+    
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : ''
+    return this.request<CollectionRecord[]>(`/api/records${query}`)
+  }
 }
 
 // 导出单例
