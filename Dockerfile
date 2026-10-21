@@ -6,7 +6,7 @@
 # ============================================
 # Stage 1: Rust构建环境
 # ============================================
-FROM rust:1.75-bookworm as rust-builder
+FROM rust:1.83-bookworm as rust-builder
 
 WORKDIR /build
 
