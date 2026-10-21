@@ -1,364 +1,320 @@
-# 玉米研究系统 V2
+# 🌽 玉米研究系统 V2
 
-**版本**: 2.0.0-release  
-**启动日期**: 2026-10-20  
-**状态**: 生产就绪
+**企业级玉米商品数据采集与分析平台**
 
-## 项目简介
+[![Rust](https://img.shields.io/badge/Rust-1.83-orange.svg)](https://www.rust-lang.org/)
+[![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-green.svg)](https://www.docker.com/)
 
-玉米研究系统V2是一个企业级大宗商品研究管理平台，专注于玉米市场数据的采集、质量评估、标准化存储和可视化分析。系统采用现代化技术栈，提供完整的数据血统追溯和多维度质量评估能力。
+---
 
-## 核心特性
+## 📖 项目简介
 
-- 🎨 **现代化UI**: 深色主题设计，参考Kiro.rs风格，响应式布局
-- 📊 **智能数据采集**: 多源采集器，增量采集，限速重试，HTML存档
-- 🔍 **质量评估体系**: A/B/C/D四级评分，多维度质量检测
-- 🏗️ **企业级架构**: Rust后端 + Next.js前端 + PostgreSQL + Redis
-- 🔬 **完整血统追溯**: RAW → STANDARD 全链路追踪
-- 📈 **可视化分析**: ECharts图表，实时监控仪表盘
+玉米研究系统 V2 是一个**全栈数据采集与分析平台**，专注于玉米商品市场的数据收集、处理、质量管理和可视化展示。
 
-## 技术栈
+### 核心特性
 
-### 后端
-- **Rust 1.80+**: Axum框架 + SeaORM + Tokio异步运行时
-- **PostgreSQL 16**: 主数据库，支持JSONB和全文搜索
-- **Redis 7**: 缓存 + Pub/Sub + 游标管理
-- **Python 3.11**: 采集器实现，PyO3集成
+- 🚀 **高性能后端**: Rust + Axum + SeaORM
+- 🎨 **现代化前端**: Next.js + React + TypeScript + Tailwind CSS
+- 🐍 **灵活采集器**: Python 动态加载，支持多数据源
+- 📊 **时序数据库**: PostgreSQL + TimescaleDB
+- 🔄 **实时通知**: Redis Pub/Sub
+- 🎯 **任务调度**: Cron 表达式定时任务
+- 📈 **数据质量**: 四级质量评分（A/B/C/D）
+- 🐳 **容器化部署**: Docker + Docker Compose
 
-### 前端
-- **Next.js 14**: App Router，服务端渲染
-- **TypeScript 5.0+**: 类型安全
-- **Tailwind CSS 3**: 实用优先的CSS框架
-- **Apache ECharts**: 数据可视化
-- **Shadcn/ui**: UI组件库
+---
 
-### 部署
-- **Docker & Docker Compose**: 容器化部署
-- **Nginx**: 反向代理
-- **多阶段构建**: 优化镜像体积
+## 🏗️ 系统架构
 
-## 快速开始
+```
+┌─────────────────────────────────────────────┐
+│         Next.js Frontend (React/TS)         │
+│  采集器管理 | 数据监控 | 任务调度 | 质量分析 │
+└─────────────────┬───────────────────────────┘
+                  │ HTTP REST API
+┌─────────────────▼───────────────────────────┐
+│         Rust Backend (Axum + SeaORM)        │
+│  API服务 | 异步任务 | 通知服务 | 数据转换  │
+└─────────────────┬───────────────────────────┘
+                  │ Command Line + JSON
+┌─────────────────▼───────────────────────────┐
+│       Python Collectors (动态加载)          │
+│  博亚和讯 | 新浪财经 | 大商所 | 中国饲料网  │
+└─────────────────┬───────────────────────────┘
+                  │ Write
+┌─────────────────▼───────────────────────────┐
+│   PostgreSQL + TimescaleDB + Redis          │
+│  RAW层 | STANDARD层 | 采集管理 | 缓存      │
+└─────────────────────────────────────────────┘
+```
 
-### 使用Docker Compose（推荐）
+---
+
+## 🚀 快速开始
+
+### 前置要求
+
+- Docker 20.10+
+- Docker Compose 2.0+
+- 4GB+ 可用内存
+
+### 一键启动
 
 ```bash
-# 克隆仓库
-cd /Users/apple/CornV2
+# 克隆项目
+git clone <repository-url>
+cd CornV2
 
-# 启动所有服务
+# 构建并启动
 docker-compose up -d
 
 # 查看日志
 docker-compose logs -f
-
-# 访问应用
-# 前端: http://localhost:3080
-# 后端API: http://localhost:18000
-# API文档: http://localhost:18000/docs
 ```
+
+### 访问系统
+
+- 🌐 **前端界面**: http://localhost:3080
+- 🔌 **后端 API**: http://localhost:18000
+- ✅ **健康检查**: http://localhost:18000/health
+
+---
+
+## 📦 功能模块
+
+### 1. 采集器管理 (`/collectors`)
+
+- ✅ 查看所有采集器状态
+- ✅ 手动运行采集任务
+- ✅ 启动/停止采集器
+- ✅ 查看运行历史
+- ✅ 批量操作
+
+### 2. 数据采集监控 (`/collection`)
+
+- ✅ 实时数据展示
+- ✅ 统计卡片（总记录数、A级数据、数据天数）
+- ✅ 最近采集记录
+- ✅ 自动刷新（10秒）
+
+### 3. 定时任务管理 (`/scheduler`)
+
+- ✅ Cron 表达式配置
+- ✅ 任务启用/禁用
+- ✅ 下次运行时间显示
+- ✅ 手动触发执行
+
+### 4. 数据质量分析 (`/quality`)
+
+- ✅ 质量评分分布（A/B/C/D）
+- ✅ 质量问题列表
+- ✅ 问题详情和受影响记录
+- ✅ 质量规则说明
+
+### 5. 系统监控 (`/monitor`)
+
+- ✅ CPU/内存/磁盘/网络监控
+- ✅ 服务状态实时显示
+- ✅ 实时日志查看
+- ✅ 数据库连接池状态
+- ✅ Redis 状态监控
+
+### 6. 系统设置 (`/settings`)
+
+- ✅ 通知设置
+- ✅ 数据库配置
+- ✅ 安全设置（API密钥、IP白名单）
+- ✅ 性能优化
+- ✅ 界面主题
+
+---
+
+## 🛠️ 技术栈
+
+### 后端
+- **Rust 1.83**: 高性能、内存安全
+- **Axum**: 异步 Web 框架
+- **SeaORM**: 现代化 ORM
+- **tokio**: 异步运行时
+- **tokio-cron-scheduler**: 任务调度
+
+### 前端
+- **Next.js 15**: React 全栈框架
+- **TypeScript**: 类型安全
+- **Tailwind CSS**: 实用优先的 CSS
+- **Radix UI**: 无头 UI 组件
+- **Lucide Icons**: 现代图标库
+
+### 数据采集
+- **Python 3.11**: 采集器运行时
+- **requests**: HTTP 客户端
+- **BeautifulSoup4**: HTML 解析
+- **lxml**: XML/HTML 处理
+
+### 数据存储
+- **PostgreSQL 16**: 主数据库
+- **TimescaleDB**: 时序扩展
+- **Redis 7**: 缓存和消息队列
+
+---
+
+## 📊 数据流程
+
+```
+1. 定时任务触发 / 手动触发
+         ↓
+2. Rust 后端调用 Python 采集器
+         ↓
+3. 采集器抓取网页数据
+         ↓
+4. 数据写入 RAW 表（原始数据）
+         ↓
+5. 后台标准化处理
+         ↓
+6. 数据写入 STANDARD 表（标准数据）
+         ↓
+7. 质量评分和异常检测
+         ↓
+8. Redis 发布实时通知
+         ↓
+9. 前端接收更新并展示
+```
+
+---
+
+## 🔧 开发指南
 
 ### 本地开发
 
-#### 1. 前置要求
-- Node.js 18+
-- Rust 1.80+
-- Python 3.11+
-- PostgreSQL 16+
-- Redis 7+
-
-#### 2. 数据库初始化
-
-```bash
-# 启动PostgreSQL和Redis
-docker-compose up -d postgres redis
-
-# 运行迁移
-./scripts/migrate_db.sh
-```
-
-#### 3. 启动后端
-
+**后端开发**:
 ```bash
 cd backend-rust
-cargo build --release
-cargo run --release
-
-# 后端运行在 http://localhost:18000
+cargo run
 ```
 
-#### 4. 启动前端
-
+**前端开发**:
 ```bash
 cd frontend
 npm install
 npm run dev
-
-# 前端运行在 http://localhost:3080
 ```
 
-#### 5. 运行采集器
-
+**添加新采集器**:
 ```bash
-# 安装Python依赖
-cd collectors-python
-pip install -r requirements.txt
+# 1. 创建采集器类
+cp collectors-python/collectors/mock_collector.py collectors-python/collectors/my_collector.py
 
-# 运行博亚采集器
-python -m collectors.boyar_production
+# 2. 实现 collect() 方法
+# 3. 在 run_collector.py 中注册
 
-# 运行新浪采集器
-python -m collectors.sina_production
+# 4. 测试
+python3 collectors-python/run_collector.py --collector my_collector
 ```
 
-## 项目结构
+### 项目结构
 
 ```
 CornV2/
-├── backend-rust/          # Rust后端服务
+├── backend-rust/           # Rust 后端
 │   ├── src/
-│   │   ├── main.rs       # 入口文件
-│   │   ├── handlers/     # API处理器
-│   │   ├── models/       # 数据模型
-│   │   ├── services/     # 业务逻辑
-│   │   └── utils/        # 工具函数
+│   │   ├── main.rs        # 入口
+│   │   ├── handlers/      # API 处理器
+│   │   ├── db/            # 数据库模型
+│   │   └── services/      # 业务逻辑
 │   └── Cargo.toml
-├── frontend/              # Next.js前端
+├── frontend/               # Next.js 前端
 │   ├── src/
-│   │   ├── app/          # 页面路由
-│   │   ├── components/   # UI组件
-│   │   └── lib/          # 工具库
+│   │   ├── app/           # 页面
+│   │   ├── components/    # 组件
+│   │   └── lib/           # 工具库
 │   └── package.json
-├── collectors-python/     # Python采集器
-│   └── collectors/
-│       ├── boyar_production.py
-│       └── sina_production.py
-├── migrations/            # 数据库迁移
-│   ├── 001_create_raw_table.sql
-│   └── 002_create_standard_table.sql
-├── tests/                 # 测试套件
-│   ├── e2e/              # 端到端测试
-│   ├── integration/      # 集成测试
-│   └── performance/      # 性能测试
-├── scripts/               # 运维脚本
-│   ├── migrate_db.sh
-│   └── deploy.sh
-├── docs/                  # 文档
-│   ├── API.md
-│   ├── ARCHITECTURE.md
-│   ├── USER_GUIDE.md
-│   └── DEVELOPER.md
-├── docker-compose.yml
-├── Dockerfile
-└── README.md
+├── collectors-python/      # Python 采集器
+│   ├── collectors/        # 采集器实现
+│   ├── run_collector.py   # 统一入口
+│   └── requirements.txt
+├── migrations/             # SQL 迁移脚本
+├── docker-compose.yml      # Docker 编排
+├── Dockerfile             # 后端镜像
+└── frontend.Dockerfile    # 前端镜像
 ```
-
-## 核心功能
-
-### 1. 数据采集
-- **博亚和讯**: 玉米现货价格、市场分析文章
-- **新浪财经**: 期货行情、市场动态
-- **增量采集**: Redis游标管理，避免重复
-- **限速重试**: 1.5秒间隔，3次重试，指数退避
-- **HTML存档**: gzip压缩存储，完整保留原始数据
-
-### 2. 质量评估
-- **来源可信度（60%）**: 官方(100) > 交易所(95) > 商业(85) > 媒体(75)
-- **数据完整性（20%）**: 必填字段检查
-- **合理性检查（15%）**: 业务规则验证
-- **时效性（5%）**: 超过72小时扣分
-
-### 3. 数据标准化
-- **RAW层**: 原始数据，完整保留
-- **STANDARD层**: 标准化格式，质量评分
-- **自动晋升**: B级以上自动晋升
-- **版本管理**: 支持数据更新和历史查询
-
-### 4. 血统追溯
-- 完整的数据流向追踪
-- 从STANDARD记录追溯到RAW记录
-- 显示采集器、URL、采集时间
-
-### 5. 数据查询
-- 多维度查询（日期、指标、地区、来源）
-- 分页、排序、过滤
-- 缓存优化，响应时间<200ms
-
-### 6. 监控与告警
-- 实时采集进度监控
-- 质量评分仪表盘
-- 缓存命中率统计
-- 系统健康检查
-
-## API端点
-
-详细API文档见 [docs/API.md](docs/API.md)
-
-### 核心端点
-- `GET /api/health` - 健康检查
-- `GET /api/collectors` - 列出采集器
-- `POST /api/collectors/run` - 运行采集器
-- `GET /api/data/raw` - 查询RAW层数据
-- `GET /api/data/standard` - 查询STANDARD层数据
-- `GET /api/data/:id/lineage` - 查询数据血统
-- `GET /api/quality/summary` - 质量汇总
-- `GET /api/cache/stats` - 缓存统计
-
-## 测试
-
-```bash
-# 运行所有测试
-cd tests
-
-# 端到端测试
-python e2e/test_collectors.py
-python e2e/test_data_pipeline.py
-python e2e/test_frontend.py
-
-# 集成测试
-python integration/test_api.py
-
-# 性能测试
-python performance/benchmark.py
-```
-
-## 部署
-
-### 生产环境部署
-
-```bash
-# 使用生产配置
-docker-compose -f docker-compose.prod.yml up -d
-
-# 或使用部署脚本
-./scripts/deploy.sh
-```
-
-### 环境变量
-
-创建 `.env` 文件：
-
-```env
-# 数据库
-DATABASE_URL=postgresql://corn_user:corn_pass@localhost:15432/corn_research
-
-# Redis
-REDIS_URL=redis://localhost:16380
-
-# 后端
-BACKEND_PORT=18000
-RUST_LOG=info
-
-# 前端
-NEXT_PUBLIC_API_URL=http://localhost:18000
-```
-
-## 性能指标
-
-- **API响应时间**: <200ms (P95)
-- **缓存命中率**: >80%
-- **并发处理**: 支持100并发用户
-- **数据库查询**: <100ms (常见查询)
-- **采集速率**: 1条/1.5秒（限速保护）
-
-## 开发指南
-
-详细开发文档见 [docs/DEVELOPER.md](docs/DEVELOPER.md)
-
-### 添加新采集器
-
-```python
-# collectors-python/collectors/my_collector.py
-from .base import BaseCollector
-
-class MyCollector(BaseCollector):
-    def collect(self, max_items=100):
-        # 实现采集逻辑
-        pass
-```
-
-### 添加新API端点
-
-```rust
-// backend-rust/src/handlers/my_handler.rs
-use axum::{Json, response::IntoResponse};
-
-pub async fn my_handler() -> impl IntoResponse {
-    Json(json!({"status": "ok"}))
-}
-```
-
-## 故障排查
-
-### 常见问题
-
-1. **数据库连接失败**
-   ```bash
-   # 检查PostgreSQL是否运行
-   docker-compose ps postgres
-   
-   # 查看日志
-   docker-compose logs postgres
-   ```
-
-2. **Redis连接失败**
-   ```bash
-   # 检查Redis是否运行
-   docker-compose ps redis
-   
-   # 测试连接
-   redis-cli -p 16380 ping
-   ```
-
-3. **前端无法连接后端**
-   ```bash
-   # 检查后端是否运行
-   curl http://localhost:18000/api/health
-   
-   # 检查CORS配置
-   # 查看 backend-rust/src/main.rs 中的CORS设置
-   ```
-
-更多问题见 [docs/USER_GUIDE.md#故障排查](docs/USER_GUIDE.md)
-
-## 贡献指南
-
-1. Fork项目
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启Pull Request
-
-## 版本历史
-
-- **v2.0.0-release** (2026-10-21) - 生产就绪版本
-  - ✅ 完整的测试覆盖（>80%）
-  - ✅ 生产级采集器（限速、重试、断点续传）
-  - ✅ 完整的数据血统追溯
-  - ✅ 质量评估体系（A/B/C/D）
-  - ✅ Docker部署优化
-  - ✅ 完整文档
-
-- **v2.0.0-alpha** (2026-10-20) - 初始版本
-  - 基础架构搭建
-  - 核心功能实现
-
-## 许可证
-
-Private Project - All Rights Reserved
-
-## 联系方式
-
-- 项目维护者: 玉米研究团队
-- 问题反馈: 通过GitHub Issues
-
-## 致谢
-
-- [Kiro.rs](https://kiro.rs) - UI设计灵感
-- [Rust](https://www.rust-lang.org/) - 系统编程语言
-- [Next.js](https://nextjs.org/) - React框架
-- [PostgreSQL](https://www.postgresql.org/) - 数据库
-- [Redis](https://redis.io/) - 缓存服务
 
 ---
 
-**Happy Coding! 🌽**
+## 📚 文档
+
+- [部署指南](DEPLOYMENT.md) - 完整的部署说明
+- [开发报告](FINAL_REPORT.md) - 项目开发总结
+- [API 文档](docs/api.md) - REST API 规范（即将推出）
+
+---
+
+## 🎯 路线图
+
+### v2.0 (当前版本) ✅
+- [x] 核心架构搭建
+- [x] 6 个主要前端页面
+- [x] 完整的后端 API
+- [x] 10+ Python 采集器
+- [x] Docker 容器化部署
+
+### v2.1 (计划中)
+- [ ] WebSocket 实时推送
+- [ ] 用户认证和权限管理
+- [ ] 数据导出功能
+- [ ] 图表可视化增强
+- [ ] 性能优化
+
+### v2.2 (规划中)
+- [ ] 移动端适配
+- [ ] 国际化支持
+- [ ] 机器学习预测
+- [ ] 自动化报告生成
+
+---
+
+## 🤝 贡献
+
+欢迎贡献代码、报告问题或提出建议！
+
+1. Fork 项目
+2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 开启 Pull Request
+
+---
+
+## 📄 许可证
+
+本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情
+
+---
+
+## 👨‍💻 作者
+
+**Corn Research Team**
+
+- 项目主页: [GitHub Repository]
+- 问题反馈: [GitHub Issues]
+
+---
+
+## 🌟 致谢
+
+感谢以下开源项目：
+
+- [Rust](https://www.rust-lang.org/)
+- [Next.js](https://nextjs.org/)
+- [PostgreSQL](https://www.postgresql.org/)
+- [TimescaleDB](https://www.timescale.com/)
+- [Redis](https://redis.io/)
+
+---
+
+**⭐ 如果这个项目对你有帮助，请给一个 Star！**
+
+**最后更新**: 2026-10-21  
+**版本**: v2.0.0  
+**完成度**: 95%
