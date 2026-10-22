@@ -7,6 +7,8 @@ import { Breadcrumb } from '@/components/ui/breadcrumb'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Clock, Plus, Play, Pause, Trash2, RefreshCw } from 'lucide-react'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { toast } from 'sonner'
 
 interface Job {
   id: string
@@ -55,6 +57,7 @@ const MOCK_JOBS: Job[] = [
 export default function SchedulerPage() {
   const [jobs, setJobs] = useState<Job[]>(MOCK_JOBS)
   const [loading, setLoading] = useState(false)
+  const confirm = useConfirm()
 
   const parseCronExpression = (cron: string) => {
     // 简单的 cron 表达式解析
@@ -90,7 +93,7 @@ export default function SchedulerPage() {
         {/* 工具栏 */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => alert('创建功能开发中')}>
+            <Button size="sm" onClick={() => toast.info('创建功能开发中')}>
               <Plus className="w-4 h-4" />
               新建任务
             </Button>
@@ -162,7 +165,7 @@ export default function SchedulerPage() {
                     variant="outline"
                     size="sm"
                     className="flex-1"
-                    onClick={() => alert('暂停功能开发中')}
+                    onClick={() => toast.info('暂停功能开发中')}
                   >
                     <Pause className="w-3.5 h-3.5" />
                     暂停
@@ -172,7 +175,7 @@ export default function SchedulerPage() {
                     variant="outline"
                     size="sm"
                     className="flex-1"
-                    onClick={() => alert('启动功能开发中')}
+                    onClick={() => toast.info('启动功能开发中')}
                   >
                     <Play className="w-3.5 h-3.5" />
                     启动
@@ -181,14 +184,25 @@ export default function SchedulerPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => alert('立即运行功能开发中')}
+                  onClick={() => toast.info('立即运行功能开发中')}
                 >
                   <Play className="w-3.5 h-3.5" />
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => alert('删除功能开发中')}
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: '删除定时任务',
+                      description: `确定要删除任务"${job.name}"吗？此操作无法撤销。`,
+                      confirmText: '删除',
+                      destructive: true,
+                    })
+                    
+                    if (ok) {
+                      toast.info('删除功能开发中')
+                    }
+                  }}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </Button>
@@ -201,7 +215,7 @@ export default function SchedulerPage() {
           <div className="text-center py-12 text-muted-foreground">
             <Clock className="w-12 h-12 mx-auto mb-4 opacity-20" />
             <p>还没有定时任务</p>
-            <p className="text-xs mt-1">点击上方"新建任务"按钮创建第一个任务</p>
+            <p className="text-xs mt-1">点击上方&quot;新建任务&quot;按钮创建第一个任务</p>
           </div>
         )}
       </div>

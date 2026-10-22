@@ -24,6 +24,7 @@ use crate::db::collection_entities::{
     ActiveModel as SourceActiveModel,
     Column as SourceColumn,
 };
+use crate::db::entities::{Entity as RawRecordEntity, Column as RawRecordColumn};
 
 #[derive(Serialize)]
 pub struct ApiResponse<T> {
@@ -776,31 +777,51 @@ pub async fn query_records(
 ) -> Result<Json<ApiResponse<Vec<record::Model>>>, StatusCode> {
     let limit = params.limit.unwrap_or(100);
 
-    let mut query_builder = record::Entity::find();
+    // Query raw_collection_records table instead
+    let mut query_builder = RawRecordEntity::find();
 
     if let Some(adapter_id) = params.adapter_id {
-        query_builder = query_builder.filter(record::Column::AdapterId.eq(adapter_id));
+        query_builder = query_builder.filter(RawRecordColumn::CollectorId.eq(adapter_id));
     }
 
     if let Some(topic) = params.topic {
-        query_builder = query_builder.filter(record::Column::TopicName.eq(topic));
-    }
-
-    if let Some(quality) = params.quality {
-        query_builder = query_builder.filter(record::Column::QualityGrade.eq(quality));
+        query_builder = query_builder.filter(RawRecordColumn::IndicatorName.eq(topic));
     }
 
     match query_builder
-        .order_by_desc(record::Column::BusinessDate)
+        .order_by_desc(RawRecordColumn::BusinessDate)
+        .order_by_desc(RawRecordColumn::CollectedAt)
         .limit(limit)
         .all(&state.db)
         .await
     {
-        Ok(records) => Ok(Json(ApiResponse {
-            success: true,
-            data: Some(records),
-            message: None,
-        })),
+        Ok(raw_records) => {
+            tracing::info!("✅ Found {} records", raw_records.len());
+            // Map raw records to the record format expected by frontend
+            let records: Vec<record::Model> = raw_records
+                .into_iter()
+                .map(|raw| record::Model {
+                    id: raw.id.to_string(),
+                    adapter_id: raw.collector_id,
+                    business_date: raw.business_date,
+                    value: Some(raw.value),
+                    unit: Some(raw.unit),
+                    topic_name: Some(raw.indicator_name),
+                    source_url: Some(raw.source_url),
+                    source_html_path: None,
+                    quality_grade: None,
+                    quality_score: None,
+                    collected_at: raw.collected_at,
+                    created_at: raw.created_at,
+                })
+                .collect();
+
+            Ok(Json(ApiResponse {
+                success: true,
+                data: Some(records),
+                message: None,
+            }))
+        }
         Err(e) => {
             tracing::error!("Failed to query records: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)

@@ -9,12 +9,15 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Database, Plus, Play, Pause, Trash2, RefreshCw, Download, Settings } from 'lucide-react'
 import { api, type AdapterWithSource } from '@/lib/api'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { toast } from 'sonner'
 
 export default function CollectorsPage() {
   const [adapters, setAdapters] = useState<AdapterWithSource[]>([])
   const [selected, setSelected] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const confirm = useConfirm()
 
   const loadAdapters = async () => {
     try {
@@ -22,7 +25,9 @@ export default function CollectorsPage() {
       setError(null)
       const response = await api.listAdapters()
       if (response.success && response.data) {
-        setAdapters(response.data)
+        const adapters = response.data
+        setAdapters(adapters)
+        setSelected(prev => prev.filter(id => adapters.some(adapter => adapter.id === id)))
       } else {
         setError(response.message || 'Failed to load adapters')
       }
@@ -45,7 +50,7 @@ export default function CollectorsPage() {
 
   const toggleSelectAll = () => {
     setSelected(prev =>
-      prev.length === adapters.length ? [] : adapters.map(a => a.adapter.id)
+      prev.length === adapters.length ? [] : adapters.map(a => a.id)
     )
   }
 
@@ -53,13 +58,13 @@ export default function CollectorsPage() {
     try {
       const response = await api.runAdapter(id)
       if (response.success) {
-        alert(`采集已启动: ${response.data?.message}`)
+        toast.success(`采集已启动: ${response.data?.message}`)
         loadAdapters()
       } else {
-        alert(`启动失败: ${response.message}`)
+        toast.error(`启动失败: ${response.message}`)
       }
     } catch (err) {
-      alert(`启动失败: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      toast.error(`启动失败: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
   }
 
@@ -67,10 +72,13 @@ export default function CollectorsPage() {
     try {
       const response = await api.startAdapter(id)
       if (response.success) {
+        toast.success('采集器已启动')
         loadAdapters()
+      } else {
+        toast.error(`操作失败: ${response.message || '请求失败'}`)
       }
     } catch (err) {
-      alert(`操作失败: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      toast.error(`操作失败: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
   }
 
@@ -78,23 +86,36 @@ export default function CollectorsPage() {
     try {
       const response = await api.stopAdapter(id)
       if (response.success) {
+        toast.success('采集器已停止')
         loadAdapters()
+      } else {
+        toast.error(`操作失败: ${response.message || '请求失败'}`)
       }
     } catch (err) {
-      alert(`操作失败: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      toast.error(`操作失败: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('确定要删除这个采集器吗？')) return
+    const ok = await confirm({
+      title: '删除采集器',
+      description: '确定要删除这个采集器吗？此操作无法撤销。',
+      confirmText: '删除',
+      destructive: true,
+    })
+    
+    if (!ok) return
 
     try {
       const response = await api.deleteAdapter(id)
       if (response.success) {
+        toast.success('采集器已删除')
         loadAdapters()
+      } else {
+        toast.error(`删除失败: ${response.message || '请求失败'}`)
       }
     } catch (err) {
-      alert(`删除失败: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      toast.error(`删除失败: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
   }
 
@@ -113,7 +134,7 @@ export default function CollectorsPage() {
     return `${days}天前`
   }
 
-  const getSuccessRate = (adapter: AdapterWithSource['adapter']) => {
+  const getSuccessRate = (adapter: AdapterWithSource) => {
     if (adapter.total_runs === 0) return 0
     return ((adapter.successful_runs / adapter.total_runs) * 100).toFixed(1)
   }
@@ -132,7 +153,7 @@ export default function CollectorsPage() {
         {/* 工具栏 */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => alert('创建功能开发中')}>
+            <Button size="sm" onClick={() => toast.info('创建功能开发中')}>
               <Plus className="w-4 h-4" />
               新建采集器
             </Button>
@@ -140,7 +161,7 @@ export default function CollectorsPage() {
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               刷新
             </Button>
-            <Button variant="outline" size="sm" onClick={() => alert('导出功能开发中')}>
+            <Button variant="outline" size="sm" onClick={() => toast.info('导出功能开发中')}>
               <Download className="w-4 h-4" />
               导出
             </Button>
@@ -171,7 +192,7 @@ export default function CollectorsPage() {
           <div className="text-center py-12 text-muted-foreground">
             <Database className="w-12 h-12 mx-auto mb-4 opacity-20" />
             <p>还没有采集器</p>
-            <p className="text-xs mt-1">点击上方"新建采集器"按钮创建第一个采集器</p>
+            <p className="text-xs mt-1">点击上方&quot;新建采集器&quot;按钮创建第一个采集器</p>
           </div>
         )}
 
@@ -214,8 +235,8 @@ export default function CollectorsPage() {
                 </tr>
               </thead>
               <tbody>
-                {adapters.map(({ adapter, source }) => {
-                  const adapterId = adapter?.id || ''
+                {adapters.map((adapter) => {
+                  const { id: adapterId, source } = adapter
                   return (
                     <tr
                       key={adapterId}
@@ -291,7 +312,7 @@ export default function CollectorsPage() {
                         )}
                         <button 
                           className="text-muted-foreground hover:text-foreground transition-colors"
-                          onClick={() => alert('配置功能开发中')}
+                          onClick={() => toast.info('配置功能开发中')}
                           title="配置"
                         >
                           <Settings className="w-4 h-4" />
@@ -321,20 +342,27 @@ export default function CollectorsPage() {
                 已选 {selected.length} 项
               </div>
               <div className="w-px h-5 bg-border" />
-              <Button variant="ghost" size="sm" onClick={() => alert('批量启动功能开发中')}>
+              <Button variant="ghost" size="sm" onClick={() => toast.info('批量启动功能开发中')}>
                 <Play className="w-4 h-4" />
                 批量启动
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => alert('批量停止功能开发中')}>
+              <Button variant="ghost" size="sm" onClick={() => toast.info('批量停止功能开发中')}>
                 <Pause className="w-4 h-4" />
                 批量停止
               </Button>
               <Button 
                 variant="destructive" 
                 size="sm"
-                onClick={() => {
-                  if (confirm(`确定要删除选中的 ${selected.length} 个采集器吗？`)) {
-                    alert('批量删除功能开发中')
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: '批量删除采集器',
+                    description: `确定要删除选中的 ${selected.length} 个采集器吗？此操作无法撤销。`,
+                    confirmText: '批量删除',
+                    destructive: true,
+                  })
+                  
+                  if (ok) {
+                    toast.info('批量删除功能开发中')
                   }
                 }}
               >

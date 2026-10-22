@@ -2,52 +2,65 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { AppLayout } from '@/components/layout/app-layout'
 import { StatCard, StatCardGrid } from '@/components/dashboard/stat-card'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { api, type CollectorInfo, type SystemStats } from '@/lib/api'
+import { api, type CollectorInfo, type DataStats, type MarketData } from '@/lib/api'
 import {
   Database,
   TrendingUp,
   Activity,
-  CheckCircle2,
   PlayCircle,
   Clock,
   AlertCircle,
 } from 'lucide-react'
-import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<SystemStats | null>(null)
+  const [stats, setStats] = useState<DataStats | null>(null)
   const [collectors, setCollectors] = useState<CollectorInfo[]>([])
-  const [trendData, setTrendData] = useState<any[]>([])
+  const [trendData, setTrendData] = useState<MarketData[]>([])
+  const [trendDays, setTrendDays] = useState(7)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    let cancelled = false
     const loadData = async () => {
+      setLoading(true)
       try {
         const [statsData, collectorsData, trendsData] = await Promise.all([
           api.getStats(),
           api.getCollectors(),
-          api.getTrendData('corn_price', 7), // 修复：getTrendData 需要 indicator 参数
+          api.getTrendData('corn_price', trendDays),
         ])
-        setStats(statsData)
-        setCollectors(collectorsData)
-        setTrendData(trendsData)
+        if (cancelled) return
+        if (!statsData.success || !statsData.data) {
+          throw new Error(statsData.message || '加载统计数据失败')
+        }
+        if (!collectorsData.success || !collectorsData.data) {
+          throw new Error(collectorsData.message || '加载采集器失败')
+        }
+        if (!trendsData.success || !trendsData.data) {
+          throw new Error(trendsData.message || '加载趋势数据失败')
+        }
+        setStats(statsData.data)
+        setCollectors(collectorsData.data)
+        setTrendData(trendsData.data)
         setError(null)
       } catch (err) {
+        if (cancelled) return
         console.error('Failed to load dashboard data:', err)
         setError(err instanceof Error ? err.message : '加载数据失败')
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
     loadData()
-  }, [])
+    return () => { cancelled = true }
+  }, [trendDays])
 
   return (
     <AppLayout title="仪表概览" subtitle="玉米研究系统运行状态">
@@ -71,39 +84,34 @@ export default function DashboardPage() {
         <StatCardGrid>
           <StatCard
             title="总数据量"
-            value={stats?.totalRecords || 0}
+            value={stats?.total_records ?? 0}
             unit="条"
-            trend={12.5}
             icon={<Database />}
             description="截至今日"
             loading={loading}
           />
           <StatCard
-            title="今日采集"
-            value={stats?.todayCollected || 0}
-            unit="条"
-            trend={8.3}
+            title="数据指标"
+            value={stats?.indicator_count ?? 0}
+            unit="个"
             icon={<TrendingUp />}
-            description="最近24小时"
+            description="已采集指标数量"
             loading={loading}
           />
           <StatCard
             title="活跃采集器"
-            value={stats?.activeCollectors || 0}
+            value={collectors.filter(collector => collector.status === 'running').length}
             unit="个"
             icon={<Activity />}
             description="正在运行"
             loading={loading}
           />
           <StatCard
-            title="数据质量"
-            value={stats?.dataQuality || 0}
-            unit="%"
-            trend={2.1}
-            icon={<CheckCircle2 />}
-            description="质量评分"
+            title="最近采集"
+            value={stats?.latest_collection ? new Date(stats.latest_collection).toLocaleDateString('zh-CN') : '暂无记录'}
+            icon={<Clock />}
+            description="最近一次数据入库日期"
             loading={loading}
-            decimals={1}
           />
         </StatCardGrid>
 
@@ -112,13 +120,13 @@ export default function DashboardPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>数据采集趋势</CardTitle>
-                <CardDescription>最近7天采集量变化</CardDescription>
+                <CardTitle>玉米价格趋势</CardTitle>
+                <CardDescription>最近{trendDays}天指标值变化</CardDescription>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm">7天</Button>
-                <Button variant="outline" size="sm">30天</Button>
-                <Button variant="outline" size="sm">90天</Button>
+                {[7, 30, 90].map(days => (
+                  <Button key={days} variant={trendDays === days ? 'default' : 'outline'} size="sm" onClick={() => setTrendDays(days)}>{days}天</Button>
+                ))}
               </div>
             </div>
           </CardHeader>
@@ -134,7 +142,7 @@ export default function DashboardPage() {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border-muted))" />
                   <XAxis
-                    dataKey="date"
+                    dataKey="business_date"
                     stroke="hsl(var(--muted-foreground))"
                     fontSize={12}
                     tickLine={false}
@@ -189,7 +197,7 @@ export default function DashboardPage() {
                       {collector.status === 'idle' && (
                         <Clock className="h-5 w-5 text-blue-500" />
                       )}
-                      {collector.status === 'error' && (
+                      {collector.status === 'failed' && (
                         <AlertCircle className="h-5 w-5 text-red-500" />
                       )}
                     </div>
@@ -216,14 +224,14 @@ export default function DashboardPage() {
                       variant={
                         collector.status === 'running'
                           ? 'success'
-                          : collector.status === 'error'
+                          : collector.status === 'failed'
                           ? 'destructive'
                           : 'secondary'
                       }
                     >
                       {collector.status === 'running' && '运行中'}
                       {collector.status === 'idle' && '空闲'}
-                      {collector.status === 'error' && '错误'}
+                      {collector.status === 'failed' && '错误'}
                     </Badge>
 
                     <Button variant="outline" size="sm">

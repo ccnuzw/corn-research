@@ -6,6 +6,7 @@
 import sys
 import json
 import argparse
+from contextlib import redirect_stdout
 from datetime import datetime
 from typing import List, Dict, Any
 
@@ -78,7 +79,9 @@ def run_collector(collector_id: str, max_items: int = 100) -> Dict[str, Any]:
         
         # 执行采集
         print(f"[run_collector] Starting {collector_id}...", file=sys.stderr)
-        records = collector.collect(max_items=max_items)
+        # stdout is the Rust bridge's JSON protocol; collector logs belong on stderr.
+        with redirect_stdout(sys.stderr):
+            records = collector.collect(max_items=max_items)
         print(f"[run_collector] Collected {len(records)} records", file=sys.stderr)
         
         # 序列化结果

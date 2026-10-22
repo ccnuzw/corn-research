@@ -141,6 +141,7 @@ async fn main() {
         
         // 采集器API (保留原有)
         .route("/api/collectors", get(handlers::list_collectors))
+        .route("/api/collectors/run", post(handlers::run_collector_by_name))
         .route("/api/collectors/:id/run", post(handlers::run_collector))
         .route("/api/collectors/:id/history", get(handlers::get_collector_history))
         .route("/api/collectors/:id/status", get(handlers::get_collector_status))

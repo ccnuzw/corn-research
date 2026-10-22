@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import '@/styles/globals.css'
 import { Toaster } from '@/components/ui/toaster'
+import { ConfirmProvider } from '@/components/ui/confirm-dialog'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -18,8 +19,10 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" suppressHydrationWarning>
       <body className={inter.className}>
-        {children}
-        <Toaster />
+        <ConfirmProvider>
+          {children}
+          <Toaster />
+        </ConfirmProvider>
       </body>
     </html>
   )

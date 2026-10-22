@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,49 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft, Play, Square, RefreshCw, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
-
-// API Base URL
-const API_BASE = 'http://localhost:18000';
-
-interface Adapter {
-  id: string;
-  name: string;
-  script_file: string;
-  source_id: string;
-  topic_name: string;
-  status: string;
-  last_run_at?: string;
-  total_runs: number;
-  successful_runs: number;
-  failed_runs: number;
-  created_at: string;
-  updated_at: string;
-}
-
-interface RunHistory {
-  id: string;
-  adapter_id: string;
-  status: string;
-  started_at: string;
-  completed_at?: string;
-  records_collected: number;
-  error_message?: string;
-}
-
-interface CollectedData {
-  id: string;
-  adapter_id: string;
-  topic_name: string;
-  data: Record<string, any>;
-  collected_at: string;
-}
-
-interface Source {
-  id: string;
-  name: string;
-  domain: string;
-  description: string;
-}
+import { api, type Adapter, type Source, type CollectionRun, type CollectionRecord } from '@/lib/api';
 
 export default function AdapterDetailPage() {
   const router = useRouter();
@@ -59,40 +17,27 @@ export default function AdapterDetailPage() {
 
   const [adapter, setAdapter] = useState<Adapter | null>(null);
   const [source, setSource] = useState<Source | null>(null);
-  const [runHistory, setRunHistory] = useState<RunHistory[]>([]);
-  const [collectedData, setCollectedData] = useState<CollectedData[]>([]);
+  const [runHistory, setRunHistory] = useState<CollectionRun[]>([]);
+  const [collectedData, setCollectedData] = useState<CollectionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('info');
 
-  useEffect(() => {
-    loadAdapterDetails();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adapterId]);
-
-  const loadAdapterDetails = async () => {
+  const loadAdapterDetails = useCallback(async () => {
     setLoading(true);
     try {
-      // Load adapter details
-      const adapterRes = await fetch(`${API_BASE}/api/adapters/${adapterId}`);
-      const adapterData = await adapterRes.json();
+      const [adapterData, historyData, recordsData] = await Promise.all([
+        api.getAdapter(adapterId),
+        api.getAdapterRuns(adapterId),
+        api.getAdapterRecords(adapterId, 50),
+      ]);
 
       if (adapterData.success && adapterData.data) {
+        if (!historyData.success) throw new Error(historyData.message || '加载运行历史失败');
+        if (!recordsData.success) throw new Error(recordsData.message || '加载采集数据失败');
         setAdapter(adapterData.data);
-
-        // Load source details
-        const sourceRes = await fetch(`${API_BASE}/api/sources/${adapterData.data.source_id}`);
-        const sourceData = await sourceRes.json();
-        if (sourceData.success) setSource(sourceData.data);
-
-        // Load run history
-        const historyRes = await fetch(`${API_BASE}/api/adapters/${adapterId}/runs`);
-        const historyData = await historyRes.json();
-        if (historyData.success) setRunHistory(historyData.data || []);
-
-        // Load collected data
-        const dataRes = await fetch(`${API_BASE}/api/adapters/${adapterId}/data?limit=50`);
-        const dataData = await dataRes.json();
-        if (dataData.success) setCollectedData(dataData.data || []);
+        setSource(adapterData.data.source);
+        setRunHistory(historyData.data || []);
+        setCollectedData(recordsData.data || []);
       } else {
         toast.error('适配器不存在');
         router.push('/collection');
@@ -103,18 +48,20 @@ export default function AdapterDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [adapterId, router]);
+
+  useEffect(() => {
+    loadAdapterDetails();
+  }, [loadAdapterDetails]);
 
   const handleStartStop = async () => {
     if (!adapter) return;
 
     const action = adapter.status === 'running' ? 'stop' : 'start';
     try {
-      const response = await fetch(`${API_BASE}/api/adapters/${adapterId}/${action}`, {
-        method: 'POST',
-      });
-
-      const result = await response.json();
+      const result = action === 'stop'
+        ? await api.stopAdapter(adapterId)
+        : await api.startAdapter(adapterId);
 
       if (result.success) {
         toast.success(action === 'start' ? '采集已启动' : '采集已停止');
@@ -258,7 +205,7 @@ export default function AdapterDetailPage() {
               <div>
                 <div className="text-sm text-muted-foreground">创建时间</div>
                 <div className="text-sm mt-1">
-                  {new Date(adapter.created_at).toLocaleString('zh-CN')}
+                  {adapter.created_at ? new Date(adapter.created_at).toLocaleString('zh-CN') : '-'}
                 </div>
               </div>
               <div>
@@ -328,8 +275,8 @@ export default function AdapterDetailPage() {
                         return (
                           <tr key={run.id} className="border-b hover:bg-muted/50">
                             <td className="py-4 font-mono text-xs">{run.id.slice(0, 8)}...</td>
-                            <td className="py-4">{getStatusBadge(run.status)}</td>
-                            <td className="py-4">{run.records_collected}</td>
+                            <td className="py-4">{getStatusBadge(run.status || 'running')}</td>
+                            <td className="py-4">{run.new_records ?? 0}</td>
                             <td className="py-4 text-sm">
                               {new Date(run.started_at).toLocaleString('zh-CN')}
                             </td>
@@ -377,7 +324,7 @@ export default function AdapterDetailPage() {
                         </span>
                       </div>
                       <pre className="text-xs bg-background p-3 rounded border overflow-x-auto">
-                        {JSON.stringify(record.data, null, 2)}
+                        {JSON.stringify(record, null, 2)}
                       </pre>
                     </Card>
                   ))}

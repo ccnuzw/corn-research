@@ -56,7 +56,47 @@ pub async fn list_collectors() -> impl IntoResponse {
 pub async fn run_collector(
     Path(collector_id): Path<String>,
     State(state): State<AppState>,
-) -> Result<impl IntoResponse, CornError> {
+) -> Result<Json<ApiResponse<serde_json::Value>>, CornError> {
+    execute_collector(collector_id, state, 100).await
+}
+
+#[derive(Deserialize)]
+pub struct RunCollectorRequest {
+    #[serde(alias = "collector_id")]
+    pub collector_name: String,
+    pub max_items: Option<u32>,
+}
+
+impl RunCollectorRequest {
+    fn validate(&self) -> Result<(), CornError> {
+        if self.collector_name.trim().is_empty() {
+            return Err(CornError::Validation("collector_name must not be empty".into()));
+        }
+        if self.max_items == Some(0) {
+            return Err(CornError::Validation("max_items must be positive".into()));
+        }
+        Ok(())
+    }
+}
+
+pub async fn run_collector_by_name(
+    State(state): State<AppState>,
+    Json(request): Json<RunCollectorRequest>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, CornError> {
+    request.validate()?;
+    execute_collector(request.collector_name, state, request.max_items.unwrap_or(100)).await
+}
+
+async fn execute_collector(
+    collector_id: String,
+    state: AppState,
+    max_items: u32,
+) -> Result<Json<ApiResponse<serde_json::Value>>, CornError> {
+    let available = python_bridge::list_available_collectors().await
+        .map_err(CornError::Python)?;
+    if !available.contains(&collector_id) {
+        return Err(CornError::Validation(format!("Unknown collector: {}", collector_id)));
+    }
     tracing::info!("🔄 Running collector: {}", collector_id);
     
     // 发送采集开始通知
@@ -67,7 +107,7 @@ pub async fn run_collector(
     ).await;
     
     // 调用Python采集器
-    let result = python_bridge::run_python_collector(&collector_id, Some(100)).await
+    let result = python_bridge::run_python_collector(&collector_id, Some(max_items)).await
         .map_err(|e| CornError::Python(e))?;
     
     // 发送采集完成通知
@@ -135,9 +175,37 @@ pub async fn get_collector_status(
 
 #[derive(Deserialize)]
 pub struct LatestDataQuery {
+    pub topic: Option<String>,
     pub indicator: Option<String>,
     pub days: Option<i32>,
     pub limit: Option<usize>,
+}
+
+fn topic_indicators(topic: &str) -> Vec<&str> {
+    match topic {
+        "shandong_arrivals" | "corn_arrivals" => vec!["山东到车量", "山东深加工到车量"],
+        "corn_spot_price" => vec!["玉米现货价格"],
+        "north_port_inventory" => vec!["北方四港库存"],
+        "north_port_shipping" => vec!["北方四港下海量"],
+        _ => vec![topic],
+    }
+}
+
+fn latest_records_query(query: &LatestDataQuery, end_date: NaiveDate) -> sea_orm::Select<RawRecords> {
+    let start_date = end_date - Duration::days(query.days.unwrap_or(30) as i64);
+    let mut records = RawRecords::find()
+        .filter(RawColumn::BusinessDate.gte(start_date))
+        .filter(RawColumn::BusinessDate.lte(end_date))
+        .order_by_desc(RawColumn::BusinessDate)
+        .order_by_desc(RawColumn::CollectedAt);
+    if let Some(topic) = &query.topic {
+        // Legacy raw records store indicator names, not topic identifiers.
+        records = records.filter(RawColumn::IndicatorName.is_in(topic_indicators(topic)));
+    }
+    if let Some(indicator) = &query.indicator {
+        records = records.filter(RawColumn::IndicatorName.eq(indicator));
+    }
+    records.limit(query.limit.unwrap_or(100) as u64)
 }
 
 /// 获取最新数据
@@ -150,24 +218,8 @@ pub async fn get_latest_data(
     
     tracing::info!("📊 Fetching latest data: days={}, limit={}", days, limit);
     
-    // 计算日期范围
     let end_date = Utc::now().naive_utc().date();
-    let start_date = end_date - Duration::days(days as i64);
-    
-    // 从数据库查询
-    let mut query_builder = RawRecords::find()
-        .filter(RawColumn::BusinessDate.gte(start_date))
-        .filter(RawColumn::BusinessDate.lte(end_date))
-        .order_by_desc(RawColumn::BusinessDate)
-        .order_by_desc(RawColumn::CollectedAt);
-    
-    // 如果指定了指标，添加过滤
-    if let Some(indicator) = query.indicator {
-        query_builder = query_builder.filter(RawColumn::IndicatorName.eq(indicator));
-    }
-    
-    let records = query_builder
-        .limit(limit as u64)
+    let records = latest_records_query(&query, end_date)
         .all(&state.db)
         .await
         .map_err(|e| CornError::Internal(format!("Database query failed: {}", e)))?;
@@ -343,18 +395,20 @@ pub async fn get_quality_scores() -> Result<impl IntoResponse, CornError> {
 pub async fn get_quality_distribution() -> Result<impl IntoResponse, CornError> {
     tracing::info!("📊 Fetching quality distribution");
     
-    // TODO: 计算质量分布
+    // TODO: 从数据库实际查询质量分布
+    // 当前返回空数据，等待STANDARD层有数据后实现
     let distribution = QualityDistribution {
         grade_a: 0,
         grade_b: 0,
         grade_c: 0,
         grade_d: 0,
+        grade_m: 0,  // Mock数据计数
     };
     
     Ok(Json(ApiResponse {
         success: true,
         data: Some(distribution),
-        message: None,
+        message: Some("质量分布统计(M=Mock测试数据)".to_string()),
     }))
 }
 
@@ -370,4 +424,72 @@ pub async fn get_quality_issues() -> Result<impl IntoResponse, CornError> {
         data: Some(issues),
         message: None,
     }))
+}
+
+#[cfg(test)]
+mod api_regression_tests {
+    use super::*;
+    use sea_orm::{DbBackend, QueryTrait};
+
+    fn sql(params: serde_json::Value) -> String {
+        let query: LatestDataQuery = serde_json::from_value(params).unwrap();
+        latest_records_query(&query, NaiveDate::from_ymd_opt(2026, 10, 22).unwrap())
+            .build(DbBackend::Postgres).to_string()
+    }
+
+    #[test]
+    fn collector_request_supports_both_names() {
+        for field in ["collector_name", "collector_id"] {
+            let request: RunCollectorRequest = serde_json::from_value(
+                serde_json::json!({field: "boyar_production", "max_items": 5})
+            ).unwrap();
+            assert_eq!(request.collector_name, "boyar_production");
+            assert_eq!(request.max_items, Some(5));
+            assert!(request.validate().is_ok());
+        }
+    }
+
+    #[test]
+    fn collector_request_rejects_invalid_input() {
+        for value in [
+            serde_json::json!({"collector_name": " "}),
+            serde_json::json!({"collector_name": "mock", "max_items": 0}),
+        ] {
+            let request: RunCollectorRequest = serde_json::from_value(value).unwrap();
+            assert!(request.validate().is_err());
+        }
+        assert!(serde_json::from_value::<RunCollectorRequest>(serde_json::json!({})).is_err());
+    }
+
+    #[test]
+    fn arrivals_topic_filters_both_legacy_indicators_in_sql() {
+        let statement = sql(serde_json::json!({"topic": "shandong_arrivals"}));
+        assert!(statement.contains("\"indicator_name\" IN ('山东到车量', '山东深加工到车量')"));
+        assert_eq!(statement, sql(serde_json::json!({"topic": "corn_arrivals"})));
+    }
+
+    #[test]
+    fn unknown_topic_is_filtered_not_ignored() {
+        let statement = sql(serde_json::json!({"topic": "missing_topic"}));
+        assert!(statement.contains("\"indicator_name\" IN ('missing_topic')"));
+    }
+
+    #[test]
+    fn topic_and_indicator_filters_are_combined() {
+        let statement = sql(serde_json::json!({
+            "topic": "north_port_inventory", "indicator": "北方四港库存", "days": 7, "limit": 2
+        }));
+        assert!(statement.contains("\"indicator_name\" IN ('北方四港库存')"));
+        assert!(statement.contains("AND \"raw_collection_records\".\"indicator_name\" = '北方四港库存'"));
+        assert!(statement.contains("2026-10-15"));
+        assert!(statement.ends_with("LIMIT 2"));
+    }
+
+    #[test]
+    fn unfiltered_query_keeps_default_date_and_limit() {
+        let statement = sql(serde_json::json!({}));
+        assert!(!statement.contains("\"indicator_name\" IN"));
+        assert!(statement.contains("2026-09-22"));
+        assert!(statement.ends_with("LIMIT 100"));
+    }
 }

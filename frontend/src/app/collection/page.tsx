@@ -11,6 +11,7 @@ import { api, type CollectionRecord } from '@/lib/api'
 export default function CollectionPage() {
   const [records, setRecords] = useState<CollectionRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   const loadRecords = async () => {
     try {
@@ -19,9 +20,13 @@ export default function CollectionPage() {
       const response = await api.queryRecords({ limit: 50 })
       if (response.success && response.data) {
         setRecords(response.data)
+        setError(null)
+      } else {
+        setError(response.message || '加载采集记录失败')
       }
     } catch (err) {
       console.error('Failed to load records:', err)
+      setError(err instanceof Error ? err.message : '加载采集记录失败')
     } finally {
       setLoading(false)
     }
@@ -51,6 +56,12 @@ export default function CollectionPage() {
             { label: '数据采集', icon: <Database className="w-4 h-4" /> },
           ]}
         />
+
+        {error && (
+          <div role="alert" className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 text-sm text-destructive">
+            {error}
+          </div>
+        )}
 
         {/* 统计卡片 */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

@@ -230,6 +230,28 @@ impl StandardizationService {
     
     /// 质量评估
     fn assess_quality(&self, raw_record: &raw_entity::Model) -> QualityAssessment {
+        // 首先检查是否是Mock数据
+        // 方式1: 检查source_url
+        if raw_record.source_url.contains("mock.data") {
+            return QualityAssessment {
+                grade: "M".to_string(),
+                score: 0.0,
+                issues: vec!["Mock测试数据".to_string()],
+            };
+        }
+        
+        // 方式2: 检查original_text
+        if let Some(ref text) = raw_record.original_text {
+            if text.contains("[Mock数据]") {
+                return QualityAssessment {
+                    grade: "M".to_string(),
+                    score: 0.0,
+                    issues: vec!["Mock测试数据".to_string()],
+                };
+            }
+        }
+        
+        // 非Mock数据，进行正常质量评估
         let mut score = 100.0;
         let mut issues = Vec::new();
         

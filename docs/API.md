@@ -108,35 +108,47 @@ curl http://localhost:18000/api/collectors
 
 #### POST /collectors/run
 
-运行指定的采集器。
+同步运行指定采集器，等待 Python 采集完成后返回计数。完整路径为
+`POST /api/collectors/run`。兼容入口 `POST /api/collectors/:id/run` 保留，路径入口无需请求体。
 
 **请求**:
 ```bash
 curl -X POST http://localhost:18000/api/collectors/run \
   -H "Content-Type: application/json" \
   -d '{
-    "collector_id": "boyar",
-    "max_items": 10
+    "collector_name": "boyar_production",
+    "max_items": 100
   }'
 ```
 
 **请求体**:
 ```json
 {
-  "collector_id": "boyar",     // 必填: 采集器ID
-  "max_items": 10              // 可选: 最大采集数量，默认100
+  "collector_name": "boyar_production",
+  "max_items": 100
 }
 ```
 
-**响应**:
+`collector_name` 必填，兼容旧字段名 `collector_id`，不能同时传两个字段。
+可用名称：`boyar`、`boyar_production`、`sina`、`sina_production`、`mock`、`dce`、`cft`。
+`max_items` 为可选正整数，默认 100，传给采集器作为数量提示；实际数量取决于采集器实现。
+空名称、未知名称或 `max_items=0` 返回 400；缺失必填字段/字段类型错误返回 422；Python 执行失败返回 500。
+
+**HTTP 200 响应示例**（数量仅示例）:
 ```json
 {
-  "status": "running",
-  "job_id": "job_123456",
-  "collector_id": "boyar",
-  "started_at": "2026-10-21T10:00:00Z"
+  "success": true,
+  "data": {
+    "collector_id": "boyar_production",
+    "records_collected": 1
+  },
+  "message": "Collected 1 records"
 }
 ```
+
+此入口沿用旧运行接口语义，**不保存采集结果到数据库**；需要异步运行、入库和运行历史时，
+使用 `POST /api/adapters/:id/run`，并轮询 `GET /api/adapters/:id/runs`。
+返回的 `success=true` 不代表数据已入库或数据质量验收通过。
 
 #### GET /collectors/:id/status
 
@@ -199,6 +211,66 @@ curl http://localhost:18000/api/collectors/boyar/history?limit=10
 ---
 
 ### 3. 数据查询
+
+#### GET /data/latest
+
+从 `raw_collection_records` 读取最新数据，完整路径为 `GET /api/data/latest`。
+本节及采集运行接口以实际 `success/data/message` 响应为准，不使用旧示例中的 `status` 包装。
+
+```bash
+curl 'http://localhost:18000/api/data/latest?topic=shandong_arrivals&limit=10'
+```
+
+| 参数 | 语义 |
+| --- | --- |
+| `topic` | 可选；按下表转换成指标名，在 SQL 中过滤 |
+| `indicator` | 可选；精确匹配指标名；与 `topic` 同传时取交集 |
+| `days` | 可选；默认 30，仅查询今天及之前对应天数内的数据 |
+| `limit` | 可选；默认 100；在过滤后限制数量 |
+
+Topic 契约（P2-D001）：旧原始表没有 topic 字段，采用明确的兼容映射，禁止忽略未知 topic。
+
+| Topic | 匹配 `indicator_name` |
+| --- | --- |
+| `shandong_arrivals`、`corn_arrivals` | `山东到车量`、`山东深加工到车量` |
+| `corn_spot_price` | `玉米现货价格` |
+| `north_port_inventory` | `北方四港库存` |
+| `north_port_shipping` | `北方四港下海量` |
+| 其他非别名值 | 将该值作为指标名精确匹配；不存在时返回空数组 |
+
+不传 topic 保持原有查询；结果按业务日期、采集时间倒序排列。
+此映射只属于 latest 接口，不改变适配器 topic 配置或 `/api/records` 的语义。
+
+**HTTP 200 响应示例**:
+```json
+{
+  "success": true,
+  "data": [{
+    "id": "2de03d6a-d1fd-49f3-9f73-4469ae213e3b",
+    "business_date": "2026-10-08",
+    "indicator_name": "山东深加工到车量",
+    "value": 1027.0,
+    "unit": "台",
+    "source": "boyar_shandong_production",
+    "quality": "A",
+    "collected_at": "2026-10-21T05:56:24.662215Z"
+  }],
+  "message": null
+}
+```
+
+注意：`quality` 仍为旧实现的固定值 `A`，不表示真实质量评分，本次不修改质量评估链路。
+
+验收与回归：
+- P2-AC01：给定可用采集器，调用两种运行入口均返回 HTTP 200 和采集计数；
+  无效名称返回 400，不应返回路由 404。
+- P2-AC02：给定混合指标数据，传山东到车 topic 仅返回两种山东指标；未知 topic 返回空数组；
+  topic 与 indicator、日期和 limit 条件共同生效。
+- 自动化资产：`backend-rust/src/handlers.rs` 的 `api_regression_tests`、
+  `collectors-python/tests/test_runner_protocol.py`、`backend-rust/tests/api_regression.py`。
+- 命令：`cargo test --locked --manifest-path backend-rust/Cargo.toml --bin corn-backend api_regression_tests`；
+  `python3 -m unittest discover -s collectors-python/tests -v`；
+  后端重启后运行 `python3 backend-rust/tests/api_regression.py`。
 
 #### GET /data/raw
 

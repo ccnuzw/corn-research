@@ -97,4 +97,5 @@ pub struct QualityDistribution {
     pub grade_b: u32,
     pub grade_c: u32,
     pub grade_d: u32,
+    pub grade_m: u32,  // Mock测试数据
 }

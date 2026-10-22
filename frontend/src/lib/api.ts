@@ -3,8 +3,8 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:18000'
 
 export interface ApiResponse<T> {
   success: boolean
-  data?: T
-  message?: string
+  data?: T | null
+  message?: string | null
 }
 
 export interface Source {
@@ -13,8 +13,8 @@ export interface Source {
   domain: string | null
   description: string | null
   status: string
-  created_at: string
-  updated_at: string
+  created_at: string | null
+  updated_at: string | null
 }
 
 export interface Adapter {
@@ -30,12 +30,12 @@ export interface Adapter {
   successful_runs: number
   failed_runs: number
   last_error: string | null
-  created_at: string
-  updated_at: string
+  created_at: string | null
+  updated_at: string | null
 }
 
-export interface AdapterWithSource {
-  adapter: Adapter
+// The backend uses serde(flatten) for the adapter fields.
+export interface AdapterWithSource extends Adapter {
   source: Source | null
 }
 
@@ -65,7 +65,39 @@ export interface CollectionRecord {
   quality_grade: string | null
   quality_score: number | null
   collected_at: string
-  created_at: string
+  created_at: string | null
+}
+
+type CollectionRecordResponse = Omit<CollectionRecord, 'value'> & {
+  value: number | string | null
+}
+
+export interface CollectorInfo {
+  id: string
+  name: string
+  status: 'idle' | 'running' | 'failed'
+  last_run: string | null
+  last_success: string | null
+  total_runs: number
+  success_rate: number
+}
+
+export interface DataStats {
+  total_records: number
+  indicator_count: number
+  coverage_rate: number
+  latest_collection: string | null
+}
+
+export interface MarketData {
+  id: string
+  business_date: string
+  indicator_name: string
+  value: number
+  unit: string
+  source: string
+  quality: string
+  collected_at: string
 }
 
 export interface RunResult {
@@ -211,7 +243,19 @@ class ApiClient {
 
   async getAdapterRecords(id: string, limit?: number) {
     const query = limit ? `?limit=${limit}` : ''
-    return this.request<CollectionRecord[]>(`/api/adapters/${id}/records${query}`)
+    return this.requestRecords(`/api/adapters/${id}/records${query}`)
+  }
+
+  private async requestRecords(endpoint: string): Promise<ApiResponse<CollectionRecord[]>> {
+    const response = await this.request<CollectionRecordResponse[]>(endpoint)
+    return {
+      ...response,
+      // SeaORM Decimal values are serialized as strings, not JS numbers.
+      data: response.data == null ? response.data : response.data.map(record => {
+        const value = record.value === null ? null : Number(record.value)
+        return { ...record, value: value !== null && Number.isFinite(value) ? value : null }
+      }),
+    }
   }
 
   // 通用记录查询
@@ -232,22 +276,21 @@ class ApiClient {
     if (params?.limit) searchParams.set('limit', params.limit.toString())
     
     const query = searchParams.toString() ? `?${searchParams.toString()}` : ''
-    return this.request<CollectionRecord[]>(`/api/records${query}`)
+    return this.requestRecords(`/api/records${query}`)
   }
 
   // 统计信息
   async getStats() {
-    // 返回 mock 数据，因为后端还没有这个 API
-    return Promise.resolve({
-      success: true,
-      data: {
-        totalRecords: 1248,
-        gradeARecords: 856,
-        dataDays: 365,
-        activeAdapters: 3,
-        recentRecords: []
-      }
-    })
+    return this.request<DataStats>('/api/data/stats')
+  }
+
+  async getCollectors() {
+    return this.request<CollectorInfo[]>('/api/collectors')
+  }
+
+  async getTrendData(indicator: string, days: number = 7) {
+    const query = new URLSearchParams({ indicator, days: days.toString() })
+    return this.request<MarketData[]>(`/api/data/trend?${query}`)
   }
 }
 
