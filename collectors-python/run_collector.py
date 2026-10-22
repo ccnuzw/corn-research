@@ -8,6 +8,8 @@ import json
 import argparse
 import logging
 from contextlib import redirect_stdout
+from progress import report_progress
+from cursor import deferred_cursors
 from datetime import datetime
 from typing import List, Dict, Any
 
@@ -18,7 +20,8 @@ COLLECTORS = {
     'boyar_production': 'collectors.boyar_production.BoyarProductionCollector',
     'sina': 'collectors.sina_production.SinaProductionCollector',
     'sina_production': 'collectors.sina_production.SinaProductionCollector',
-    'dce': 'collectors.dce.DCEFuturesCollector',
+    'dce': 'collectors.dce_production.DceProductionCollector',
+    'dce_production': 'collectors.dce_production.DceProductionCollector',
     'cft': 'collectors.cft.CFTSpotCollector',
 }
 
@@ -77,20 +80,23 @@ def run_collector(collector_id: str, max_items: int = 100) -> Dict[str, Any]:
         
         # 实例化采集器
         collector = collector_class()
+        report_progress("collecting")
         
         # 执行采集
         print(f"[run_collector] Starting {collector_id}...", file=sys.stderr)
         # stdout is the Rust bridge's JSON protocol; collector logs belong on stderr.
-        with redirect_stdout(sys.stderr):
+        with deferred_cursors() as cursor_updates, redirect_stdout(sys.stderr):
             records = collector.collect(max_items=max_items)
         print(f"[run_collector] Collected {len(records)} records", file=sys.stderr)
         
         # 序列化结果
         serialized_records = [serialize_record(r) for r in records]
+        report_progress("collected", len(records), len(records), records=len(records))
         
         return {
             'success': True,
             'records': serialized_records,
+            'cursor_updates': list(cursor_updates.values()),
             'error': None
         }
     
@@ -111,8 +117,8 @@ def list_collectors() -> List[str]:
 
 
 def main():
-    logging.basicConfig(level=logging.INFO, stream=sys.stderr,
-                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    from config import configure_runtime_logging
+    configure_runtime_logging()
     parser = argparse.ArgumentParser(description='Run data collector')
     parser.add_argument('--collector', type=str, help='Collector ID to run')
     parser.add_argument('--max-items', type=int, default=100, help='Maximum items to collect')

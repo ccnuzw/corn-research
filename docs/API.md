@@ -915,3 +915,67 @@ and completed_at; the job exposes last_error and failed_count. An isolated real
 runner failure and independent PostgreSQL persistence check passed via
 `python3 backend-rust/tests/scheduler_failure.py`. This test cleans up its own
 job/adapter and saves evidence under docs/reports; it does not alter either example.
+
+## P1 Release Hardening
+
+Sina HTTP requests rotate **desktop** User-Agent strings; mobile clients can receive
+an unrelated CBOT application shell. Bounded real-source fallbacks, alternative
+article containers/headers and detailed diagnostics replace the former fragile
+single-selector behavior. No mock fallback is used. Source network retries can
+exceed a30-second client timeout; wait for the linked collection-run status or use
+an appropriately bounded client timeout (the live regression uses180seconds).
+
+Latest-data queries now validate days1..36500 and limit1..10000; trend queries
+validate days1..36500. Invalid ranges return HTTP400 rather than risking date
+arithmetic panic. Critical startup failures log and exit1 instead of panicking;
+API serialization failures return HTTP500.
+
+## Phase 2: Async Collection Jobs
+
+Apply `migrations/009_async_jobs.sql` before deploying the backend.
+
+`POST /api/collectors/run/async` accepts
+`{"collector_name":"boyar_production","max_items":100}` (collector_id alias supported).
+Returns HTTP202, `{success:true,data:{job_id,status:"queued",status_url},message}`.
+max_items must be1..1000; unknown/unmapped collector400, duplicate active adapter409.
+The response is sent after the durable queue insert, not after collection finishes.
+
+`GET /api/jobs/:id` returns an AsyncJob with status queued/running/succeeded/failed,
+progress0..100, phase, phase-specific details, result.records_collected on success,
+error_message on failure, run_id and timestamps. Unknown UUID404, malformed UUID400.
+Poll until a terminal state. Async runs persist records and have normal collection
+history. Existing synchronous and adapter endpoints keep their previous contracts.
+
+Two workers process the queue. Progress reflects actual phase/work events; only
+successful persistence/run finalization reaches100. Async Python is bounded to2h.
+On single-backend restart, queued jobs resume; interrupted running jobs fail explicitly,
+while jobs linked to already committed successful runs reconcile to succeeded.
+There is no automatic replay/cancel endpoint or exactly-once Redis/SQL guarantee.
+See `docs/reports/PHASE2_DAY1_TASK1.md` for tests and operational limits.
+
+## Phase 2: Unified Incremental Cursors
+
+Boyar retains `collector:boyar:last_article_id`; no key reset/migration is required.
+Sina uses `collector:sina:last_date` for spot report business dates and the independent
+`collector:sina:last_date:futures` for quote business dates. Dates use YYYY-MM-DD.
+The initial Sina run returns the current real snapshot; repeating on the same business
+dates returns0, not an error. This is a first-daily-snapshot feed, not intraday ticks.
+
+All persistence-enabled paths (async jobs, adapter runs, scheduler runs, and Sina's
+synchronous endpoint) stage Python cursor proposals, persist/deduplicate the entire
+returned batch, then acknowledge monotonic Redis updates. Failed validation/insertion
+does not advance any proposed cursor. A Redis acknowledgement failure marks the run
+failed even when some/all rows already exist; retry deduplicates those rows. SQL/Redis
+remain separate transactions, so crash/retry can repeat work, not guarantee exactly once.
+The legacy Boyar synchronous count-only endpoint does not persist or advance cursors;
+use async or adapter runs for production incremental ingestion.
+
+`max_items` is not pagination: a partially returned Sina stream/date is not checkpointed.
+Use a batch large enough for the complete daily snapshot (default100; current total41).
+Existing dates are skipped independently per stream; no automatic historical backfill
+or same-day update capture is promised. Configured futures symbols should remain stable;
+adding one mid-day requires explicit backfill. Redis unavailability/corruption fails the
+run rather than silently scanning from scratch. Other collectors may opt into the Base
+cursor methods without changing collectors that have no configured cursor.
+
+Implementation and verification: `docs/reports/PHASE2_DAY1_TASK2.md`.

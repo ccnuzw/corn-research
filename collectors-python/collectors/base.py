@@ -75,6 +75,21 @@ class BaseCollector(ABC):
         """
         pass
     
+    def configure_cursor(self, namespace, kind='int', **kwargs):
+        from cursor import CursorManager
+        self.cursor = CursorManager(namespace, kind, **kwargs)
+        return self.cursor
+
+    def get_cursor(self):
+        cursor = getattr(self, 'cursor', None)
+        return cursor.get() if cursor is not None else None
+
+    def advance_cursor(self, value):
+        cursor = getattr(self, 'cursor', None)
+        if cursor is None:
+            raise RuntimeError('Collector has no configured cursor')
+        return cursor.advance(value)
+
     def validate_config(self) -> bool:
         """验证配置（可选覆盖）"""
         return True

@@ -33,13 +33,14 @@ python run_collector.py --collector boyar_production --max-items 10
 - `REDIS_URL`：默认 `redis://localhost:16380/0`；Docker Compose 已提供 `redis://redis:6379/0`。
 - `BOYAR_START_ARTICLE_ID`：无游标时首次起点，默认 `1267743`，可按回填范围调整。
 - `BOYAR_SCAN_LIMIT`：单次最多扫描文章数，默认 150；`max_items` 限制返回的有效记录数。
-- Redis key：`collector:boyar:last_article_id`；表示最后成功处理的文章 ID，而非数据库入库确认。
+- Redis key：`collector:boyar:last_article_id`；保留原有键值，不需要清空或迁移。
 
 增量规则：首次从配置起点开始，之后从 Redis 的 `last_id + 1` 开始。
 成功处理的非目标文章也推进游标；显式起点不大于游标时按重复处理并停止。
 遇到 404/410 停止，缺页不推进游标；因此文章 ID 存在永久空洞时需要人工确认后调整起点。
 Redis 不可用、游标损坏、存档失败或网络重试耗尽时抛错，不静默重扫。
-整批抓取解析和 HTML 存档成功后才写游标；Redis 锁防止并发增量扫描。
+整批抓取解析和 HTML 存档成功后提出游标更新；通过后端执行时，全部记录入库成功后才确认写入 Redis。
+Redis 锁防止同时扫描；入库确认期间的重复扫描由数据库去重和单调游标更新处理。
 `incremental=False` 可用于诊断或历史回填，不读取/修改生产游标。
 
 每次请求（包括重试）随机等待 1–3 秒限速，User-Agent 轮换并添加 Referer。
@@ -80,6 +81,31 @@ docker exec corn_backend python3 /app/collectors-python/tests/verify_boyar_live.
 真实 Redis 测试使用随机 `test:collector:boyar:*` key，并自动清理；HTTP 为模拟响应，
 不表示真实站点已通过。生产 key 只应由真实采集推进，不要用测试 ID 初始化。
 
-边界：当前 Rust 运行接口只返回采集计数，适配器接口另行入库；Python 游标提交与数据库
-事务不是原子操作。跨进程/数据库失败的端到端至少一次投递，需要后续实现入库确认或持久队列，
-本次不能据此宣称完整入库链路无丢失。
+## 统一游标管理（Phase 2 Day 1 Task 2）
+
+`cursor.py` 提供 `CursorManager(namespace, kind='int')`，支持正整数文章 ID 和严格
+`YYYY-MM-DD` 日期。`BaseCollector.configure_cursor/get_cursor/advance_cursor` 供采集器复用；
+未配置游标的采集器保持原行为。Redis 异常或损坏值直接报错，不把异常当作首次采集。
+CAS 原子更新防止并发回退，也避免 Lua 浮点整数精度问题。
+
+新浪按每日首份快照增量采集，现货、期货独立推进：
+- `collector:sina:last_date`：现货报告的业务日期。
+- `collector:sina:last_date:futures`：期货报价的业务日期，默认符号 `nf_C0`。
+- 同日第二次采集返回 0 条；不是盘中报价订阅，也不修改已保存的当日首份快照。
+- `max_items` 截断某日期的数据时，不推进该流的日期游标；重试应使用足够大的批量（默认 100）。
+- 不使用网页发布日期或采集当天日期冒充业务日期；已知旧报告跳过抓取。
+- `SINA_CURSOR_KEY` 仅用于隔离环境或明确的运维覆盖；常规部署无需设置。
+- `SINA_FUTURES_SYMBOLS` 应保持稳定；当天新增符号需单独回填，不能依赖已推进的流游标。
+
+后端执行链路为：`run_collector.py` 暂存更新 → 输出 `cursor_updates` → Rust 校验/入库所有
+返回记录 → `commit_cursors.py` 确认 Redis 游标。任意入库失败均不确认；Redis 确认失败则
+本次任务标为失败，人工重试会去重已写入的数据。异步、适配器和调度任务走相同确认链路。
+旧博亚同步计数接口不入库，因此也不推进游标；生产采集请使用异步或适配器接口。
+
+直接调用采集器类的 `.collect()` 仍会自行提交游标；命令行运行器只输出更新提案，
+不会把未入库的数据标为已完成。不要在尚未持久化输出时手动执行确认脚本。
+`incremental=False` 为不读写游标的诊断模式，需直接调用采集器类。
+
+SQL 与 Redis 并非一个事务：入库后、确认前崩溃可能重复抓取，但不提前越过未入库数据。
+当前仍为单后端恢复模型，不提供恰好一次投递、自动重放或完整历史回填保证。
+真实链路测试与生产键值见 `docs/reports/PHASE2_DAY1_TASK2.md`（项目根目录）。

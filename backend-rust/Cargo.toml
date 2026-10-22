@@ -9,6 +9,7 @@ axum = "0.7"
 tokio = { version = "1", features = ["full"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "fs"] }
+http = "1.0"
 
 # 序列化
 serde = { version = "1.0", features = ["derive"] }
@@ -19,7 +20,7 @@ serde_json = "1.0"
 
 # 日志
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # 工具
 chrono = { version = "0.4", features = ["serde"] }
@@ -39,3 +40,4 @@ sea-orm = { version = "1.0", features = ["sqlx-postgres", "runtime-tokio-native-
 # 项目内部依赖 (暂时禁用，避免编译问题)
 # corn-domain = { path = "../core-rust/corn-domain" }
 # corn-infrastructure = { path = "../core-rust/corn-infrastructure" }
+

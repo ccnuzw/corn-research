@@ -1,0 +1,81 @@
+{
+  "cursor_key": "test:phase2:sina:52270c93bf304deeaa52fa2156aa47b0",
+  "mode": "live Sina; isolated Redis keys; adapter-scoped PostgreSQL rejection",
+  "persistence_failure_job": {
+    "adapter_id": "test_cursor_pipeline_bbc97191ff",
+    "collector_name": "sina_production",
+    "completed_at": "2026-10-22T05:45:14.431490Z",
+    "created_at": "2026-10-22T05:45:06.242210Z",
+    "details": {
+      "completed": 0,
+      "phase": "persisting",
+      "total": 0
+    },
+    "error_message": "41 records failed validation or insertion",
+    "id": "d450fe5d-be16-4888-9d15-52791eaa4e25",
+    "max_items": 100,
+    "phase": "failed",
+    "progress": 90,
+    "result": null,
+    "run_id": "b3a84b08-78a4-487c-8e21-0458eb04ff40",
+    "started_at": "2026-10-22T05:45:06.262461Z",
+    "status": "failed",
+    "updated_at": "2026-10-22T05:45:14.431490Z"
+  },
+  "checkpoint_after_failed_persistence": [
+    null,
+    null
+  ],
+  "successful_jobs": [
+    {
+      "adapter_id": "adapter_sina_spot",
+      "collector_name": "sina_production",
+      "completed_at": "2026-10-22T05:45:41.190352Z",
+      "created_at": "2026-10-22T05:45:15.248254Z",
+      "details": {
+        "completed": 0,
+        "phase": "persisting",
+        "total": 0
+      },
+      "error_message": null,
+      "id": "7348a7b6-756c-4ed5-92b5-b531bb18659b",
+      "max_items": 100,
+      "phase": "succeeded",
+      "progress": 100,
+      "result": {
+        "records_collected": 41
+      },
+      "run_id": "35077ea5-3393-4023-9ba6-33603813e03d",
+      "started_at": "2026-10-22T05:45:15.440439Z",
+      "status": "succeeded",
+      "updated_at": "2026-10-22T05:45:41.190352Z"
+    },
+    {
+      "adapter_id": "adapter_sina_spot",
+      "collector_name": "sina_production",
+      "completed_at": "2026-10-22T05:45:46.139407Z",
+      "created_at": "2026-10-22T05:45:41.363507Z",
+      "details": {
+        "completed": 0,
+        "phase": "persisting",
+        "total": 0
+      },
+      "error_message": null,
+      "id": "98356547-b77b-4a58-bb19-de6042f6e9f5",
+      "max_items": 100,
+      "phase": "succeeded",
+      "progress": 100,
+      "result": {
+        "records_collected": 0
+      },
+      "run_id": "b4edbab0-88a9-437e-a2dc-87281208bd7a",
+      "started_at": "2026-10-22T05:45:41.447253Z",
+      "status": "succeeded",
+      "updated_at": "2026-10-22T05:45:46.139407Z"
+    }
+  ],
+  "checkpoint_after_success": [
+    "2026-10-22",
+    "2026-10-22"
+  ]
+}

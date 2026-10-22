@@ -1,0 +1,66 @@
+groups:
+  - name: corn-production
+    rules:
+      - alert: CornMetricsMissing
+        expr: absent(corn_ops_last_collection_timestamp_seconds) or time() - corn_ops_last_collection_timestamp_seconds > 180
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Corn ops collection missing or stale"
+      - alert: CornExporterDown
+        expr: up{job="corn-ops"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Corn textfile exporter is unreachable"
+      - alert: CornServiceUnavailable
+        expr: corn_service_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Corn service probe failed: {{ $labels.service }}"
+      - alert: CornCollectionFailed
+        expr: corn_ops_collection_success == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Some Corn metric probes failed; inspect collector stderr"
+      - alert: CornDiskHigh
+        expr: corn_disk_used_ratio > 0.80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Deployment filesystem is over 80 percent full"
+      - alert: CornRedisMemoryHigh
+        expr: corn_redis_memory_used_ratio > 0.80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis memory is approaching the noeviction limit"
+      - alert: CornQueueStalled
+        expr: corn_async_oldest_queued_age_seconds > 900
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Oldest queued job exceeds 15 minutes"
+      - alert: CornJobLongRunning
+        expr: corn_async_oldest_running_age_seconds > 1800
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Running job exceeds 30 minutes; investigate without deleting locks"
+      - alert: CornLocalBackupOverdue
+        expr: time() - corn_backup_last_success_timestamp_seconds > 93600
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No completed local backup in 26 hours (off-site copy must be checked separately)"

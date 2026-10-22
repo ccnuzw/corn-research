@@ -11,8 +11,8 @@ use axum::{
 };
 use serde::{Serialize, Deserialize};
 use tower_http::cors::CorsLayer;
-use std::net::SocketAddr;
-use std::sync::Arc;
+use http::{Method, header, HeaderValue};
+use std::{net::SocketAddr, sync::Arc};
 
 mod handlers;
 mod python_bridge;
@@ -25,10 +25,11 @@ mod standardization;
 mod lineage_handlers;
 mod collection_handlers;
 mod collection_execution;
+mod async_jobs;
 
 use scheduler::JobManager;
 use notification::NotificationService;
-use standardization::{StandardizationService, StandardEntity};
+use standardization::StandardizationService;
 use lineage_handlers::{get_data_lineage, trigger_standardization, trigger_auto_promotion};
 
 #[derive(Serialize)]
@@ -52,13 +53,17 @@ async fn main() -> std::process::ExitCode {
     // 加载环境变量
     dotenvy::dotenv().ok();
     
-    // 初始化日志（支持RUST_LOG环境变量）
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"))
-        )
-        .init();
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    let logging = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_ansi(false)
+        .with_writer(std::io::stderr);
+    if std::env::var("RUST_LOG_FORMAT").as_deref() == Ok("json") {
+        logging.json().init();
+    } else {
+        logging.init();
+    }
 
     match run_server().await {
         Ok(()) => std::process::ExitCode::SUCCESS,
@@ -102,6 +107,8 @@ async fn run_server() -> anyhow::Result<()> {
         .await
         .context("Failed to start job scheduler")?;
     
+    async_jobs::start(db.clone()).await.context("Failed to start async collection workers")?;
+
     // 初始化标准化服务
     let standardization_service = StandardizationService::new(db.clone());
     
@@ -112,8 +119,25 @@ async fn run_server() -> anyhow::Result<()> {
         standardization_service: Arc::new(standardization_service),
     };
 
-    // 构建路由
-    let app = Router::new()
+    let app = create_app(app_state);
+
+    // 启动服务
+    let port = std::env::var("SERVER_PORT")
+        .unwrap_or_else(|_| "8000".to_string())
+        .parse::<u16>()
+        .unwrap_or(8000);
+
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    tracing::info!("🚀 Corn Backend listening on http://{}", addr);
+
+    let listener = tokio::net::TcpListener::bind(&addr).await.context("Failed to bind backend listener")?;
+    axum::serve(listener, app).await.context("Backend HTTP server failed")?;
+    Ok(())
+}
+
+// Share the production route tree with in-process HTTP contract tests.
+fn create_app(app_state: AppState) -> Router {
+    Router::new()
         // 健康检查
         .route("/health", get(health_check))
         
@@ -147,6 +171,8 @@ async fn run_server() -> anyhow::Result<()> {
         // 采集器API (保留原有)
         .route("/api/collectors", get(handlers::list_collectors))
         .route("/api/collectors/run", post(handlers::run_collector_by_name))
+        .route("/api/collectors/run/async", post(async_jobs::submit))
+        .route("/api/jobs/:id", get(async_jobs::get))
         .route("/api/collectors/:id/run", post(handlers::run_collector))
         .route("/api/collectors/:id/history", get(handlers::get_collector_history))
         .route("/api/collectors/:id/status", get(handlers::get_collector_status))
@@ -183,22 +209,22 @@ async fn run_server() -> anyhow::Result<()> {
         // WebSocket（TODO: 实现）
         // .route("/ws/notifications", get(ws_handler))
         
-        // CORS
-        .layer(CorsLayer::permissive())
-        .with_state(app_state);
-
-    // 启动服务
-    let port = std::env::var("SERVER_PORT")
-        .unwrap_or_else(|_| "8000".to_string())
-        .parse::<u16>()
-        .unwrap_or(8000);
-    
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    tracing::info!("🚀 Corn Backend listening on http://{}", addr);
-    
-    let listener = tokio::net::TcpListener::bind(&addr).await.context("Failed to bind backend listener")?;
-    axum::serve(listener, app).await.context("Backend HTTP server failed")?;
-    Ok(())
+        // CORS - 限制到特定来源
+        .layer({
+            use tower_http::cors::{CorsLayer, Any};
+            use http::Method;
+            
+            let frontend_origin = std::env::var("FRONTEND_URL")
+                .unwrap_or_else(|_| "http://localhost:3080".to_string());
+            
+            CorsLayer::new()
+                .allow_origin(frontend_origin.parse::<http::HeaderValue>().unwrap())
+                .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::OPTIONS])
+                .allow_headers([http::header::CONTENT_TYPE, http::header::AUTHORIZATION])
+                .allow_credentials(false)
+                .max_age(std::time::Duration::from_secs(3600))
+        })
+        .with_state(app_state)
 }
 
 async fn health_check() -> impl IntoResponse {

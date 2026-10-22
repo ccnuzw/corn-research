@@ -1,0 +1,534 @@
+{
+  "label": "baseline",
+  "started_at": "2026-10-22T06:11:21.517355+00:00",
+  "base_url": "http://localhost:18000",
+  "python": "3.14.6",
+  "host": "macOS-27.0.1-arm64-i386-64bit-Mach-O",
+  "image": "sha256:74e9252898b9f884337f7087c73cb5ccce284b0064e288b1f752548321b59d02",
+  "log_config": [
+    "RUST_LOG=info"
+  ],
+  "method": "HTTP/1.1 keep-alive per worker; closed-loop bounded requests; no automatic retries",
+  "docker_resources": "10 CPUs; 8319504384 bytes; aarch64\n",
+  "resources_before": "{\"BlockIO\":\"4.1kB / 332kB\",\"CPUPerc\":\"0.87%\",\"Container\":\"corn_backend\",\"ID\":\"e7c79b89fc66\",\"MemPerc\":\"0.07%\",\"MemUsage\":\"5.238MiB / 7.748GiB\",\"Name\":\"corn_backend\",\"NetIO\":\"9.67MB / 6.88MB\",\"PIDs\":\"11\"}\n{\"BlockIO\":\"131MB / 52.1MB\",\"CPUPerc\":\"0.52%\",\"Container\":\"corn_postgres\",\"ID\":\"4d7b35801579\",\"MemPerc\":\"0.78%\",\"MemUsage\":\"62.04MiB / 7.748GiB\",\"Name\":\"corn_postgres\",\"NetIO\":\"12.1MB / 9.91MB\",\"PIDs\":\"12\"}\n{\"BlockIO\":\"63.1MB / 2.33MB\",\"CPUPerc\":\"0.79%\",\"Container\":\"corn_redis\",\"ID\":\"cf34ab2617c5\",\"MemPerc\":\"0.23%\",\"MemUsage\":\"18.04MiB / 7.748GiB\",\"Name\":\"corn_redis\",\"NetIO\":\"641kB / 217kB\",\"PIDs\":\"6\"}\n",
+  "idle_log": {
+    "bytes": 27960,
+    "lines": 80,
+    "sql_query_lines": 80,
+    "window_seconds": 5.066
+  },
+  "sequential": [
+    {
+      "requests": 50,
+      "successes": 50,
+      "errors": 0,
+      "status_counts": {
+        "200": 50
+      },
+      "elapsed_seconds": 0.021396,
+      "successful_requests_per_second": 2336.94,
+      "latency_ms_all_requests": {
+        "min": 0.315,
+        "mean": 0.422,
+        "p50": 0.378,
+        "p95": 0.598,
+        "p99": 2.018,
+        "max": 2.018
+      },
+      "error_examples": [],
+      "workers": 1,
+      "path": "/health"
+    },
+    {
+      "requests": 50,
+      "successes": 50,
+      "errors": 0,
+      "status_counts": {
+        "200": 50
+      },
+      "elapsed_seconds": 0.035179,
+      "successful_requests_per_second": 1421.3,
+      "latency_ms_all_requests": {
+        "min": 0.451,
+        "mean": 0.696,
+        "p50": 0.619,
+        "p95": 0.903,
+        "p99": 3.35,
+        "max": 3.35
+      },
+      "error_examples": [],
+      "workers": 1,
+      "path": "/api/sources"
+    },
+    {
+      "requests": 50,
+      "successes": 50,
+      "errors": 0,
+      "status_counts": {
+        "200": 50
+      },
+      "elapsed_seconds": 0.039691,
+      "successful_requests_per_second": 1259.73,
+      "latency_ms_all_requests": {
+        "min": 0.604,
+        "mean": 0.787,
+        "p50": 0.731,
+        "p95": 0.996,
+        "p99": 2.276,
+        "max": 2.276
+      },
+      "error_examples": [],
+      "workers": 1,
+      "path": "/api/adapters"
+    },
+    {
+      "requests": 50,
+      "successes": 50,
+      "errors": 0,
+      "status_counts": {
+        "200": 50
+      },
+      "elapsed_seconds": 0.079588,
+      "successful_requests_per_second": 628.23,
+      "latency_ms_all_requests": {
+        "min": 1.216,
+        "mean": 1.578,
+        "p50": 1.441,
+        "p95": 1.771,
+        "p99": 7.614,
+        "max": 7.614
+      },
+      "error_examples": [],
+      "workers": 1,
+      "path": "/api/data/latest?limit=100"
+    },
+    {
+      "requests": 50,
+      "successes": 50,
+      "errors": 0,
+      "status_counts": {
+        "200": 50
+      },
+      "elapsed_seconds": 0.041927,
+      "successful_requests_per_second": 1192.56,
+      "latency_ms_all_requests": {
+        "min": 0.554,
+        "mean": 0.832,
+        "p50": 0.828,
+        "p95": 0.988,
+        "p99": 2.32,
+        "max": 2.32
+      },
+      "error_examples": [],
+      "workers": 1,
+      "path": "/api/data/latest?topic=shandong_arrivals&limit=100"
+    },
+    {
+      "requests": 50,
+      "successes": 50,
+      "errors": 0,
+      "status_counts": {
+        "200": 50
+      },
+      "elapsed_seconds": 0.069746,
+      "successful_requests_per_second": 716.89,
+      "latency_ms_all_requests": {
+        "min": 0.961,
+        "mean": 1.388,
+        "p50": 1.169,
+        "p95": 1.697,
+        "p99": 9.343,
+        "max": 9.343
+      },
+      "error_examples": [],
+      "workers": 1,
+      "path": "/api/data/stats"
+    },
+    {
+      "requests": 50,
+      "successes": 50,
+      "errors": 0,
+      "status_counts": {
+        "200": 50
+      },
+      "elapsed_seconds": 0.05251,
+      "successful_requests_per_second": 952.2,
+      "latency_ms_all_requests": {
+        "min": 0.86,
+        "mean": 1.043,
+        "p50": 1.006,
+        "p95": 1.301,
+        "p99": 2.382,
+        "max": 2.382
+      },
+      "error_examples": [],
+      "workers": 1,
+      "path": "/api/adapters/adapter_sina_spot/runs?limit=20"
+    },
+    {
+      "requests": 50,
+      "successes": 50,
+      "errors": 0,
+      "status_counts": {
+        "200": 50
+      },
+      "elapsed_seconds": 0.111403,
+      "successful_requests_per_second": 448.82,
+      "latency_ms_all_requests": {
+        "min": 1.815,
+        "mean": 2.204,
+        "p50": 2.14,
+        "p95": 2.526,
+        "p99": 4.168,
+        "max": 4.168
+      },
+      "error_examples": [],
+      "workers": 1,
+      "path": "/api/adapters/adapter_sina_spot/records?limit=100"
+    }
+  ],
+  "concurrent": [
+    {
+      "requests": 400,
+      "successes": 400,
+      "errors": 0,
+      "status_counts": {
+        "200": 400
+      },
+      "elapsed_seconds": 0.443749,
+      "successful_requests_per_second": 901.41,
+      "latency_ms_all_requests": {
+        "min": 0.294,
+        "mean": 1.103,
+        "p50": 1.013,
+        "p95": 2.116,
+        "p99": 2.341,
+        "max": 2.501
+      },
+      "error_examples": [],
+      "workers": 1,
+      "round": 1
+    },
+    {
+      "requests": 400,
+      "successes": 400,
+      "errors": 0,
+      "status_counts": {
+        "200": 400
+      },
+      "elapsed_seconds": 0.115863,
+      "successful_requests_per_second": 3452.36,
+      "latency_ms_all_requests": {
+        "min": 0.457,
+        "mean": 2.446,
+        "p50": 2.204,
+        "p95": 4.636,
+        "p99": 13.609,
+        "max": 16.536
+      },
+      "error_examples": [],
+      "workers": 10,
+      "round": 1
+    },
+    {
+      "requests": 400,
+      "successes": 400,
+      "errors": 0,
+      "status_counts": {
+        "200": 400
+      },
+      "elapsed_seconds": 0.079846,
+      "successful_requests_per_second": 5009.64,
+      "latency_ms_all_requests": {
+        "min": 0.893,
+        "mean": 4.471,
+        "p50": 4.126,
+        "p95": 8.461,
+        "p99": 12.252,
+        "max": 15.277
+      },
+      "error_examples": [],
+      "workers": 25,
+      "round": 1
+    },
+    {
+      "requests": 400,
+      "successes": 400,
+      "errors": 0,
+      "status_counts": {
+        "200": 400
+      },
+      "elapsed_seconds": 0.105693,
+      "successful_requests_per_second": 3784.56,
+      "latency_ms_all_requests": {
+        "min": 0.781,
+        "mean": 9.788,
+        "p50": 8.315,
+        "p95": 19.747,
+        "p99": 45.371,
+        "max": 47.789
+      },
+      "error_examples": [],
+      "workers": 50,
+      "round": 1
+    },
+    {
+      "requests": 400,
+      "successes": 400,
+      "errors": 0,
+      "status_counts": {
+        "200": 400
+      },
+      "elapsed_seconds": 0.455213,
+      "successful_requests_per_second": 878.71,
+      "latency_ms_all_requests": {
+        "min": 0.292,
+        "mean": 1.131,
+        "p50": 1.059,
+        "p95": 2.189,
+        "p99": 2.409,
+        "max": 2.62
+      },
+      "error_examples": [],
+      "workers": 1,
+      "round": 2
+    },
+    {
+      "requests": 400,
+      "successes": 400,
+      "errors": 0,
+      "status_counts": {
+        "200": 400
+      },
+      "elapsed_seconds": 0.112723,
+      "successful_requests_per_second": 3548.52,
+      "latency_ms_all_requests": {
+        "min": 0.375,
+        "mean": 2.502,
+        "p50": 2.194,
+        "p95": 4.767,
+        "p99": 11.28,
+        "max": 12.078
+      },
+      "error_examples": [],
+      "workers": 10,
+      "round": 2
+    },
+    {
+      "requests": 400,
+      "successes": 400,
+      "errors": 0,
+      "status_counts": {
+        "200": 400
+      },
+      "elapsed_seconds": 0.076211,
+      "successful_requests_per_second": 5248.55,
+      "latency_ms_all_requests": {
+        "min": 0.842,
+        "mean": 4.317,
+        "p50": 3.983,
+        "p95": 7.696,
+        "p99": 9.75,
+        "max": 10.778
+      },
+      "error_examples": [],
+      "workers": 25,
+      "round": 2
+    },
+    {
+      "requests": 400,
+      "successes": 400,
+      "errors": 0,
+      "status_counts": {
+        "200": 400
+      },
+      "elapsed_seconds": 0.088328,
+      "successful_requests_per_second": 4528.6,
+      "latency_ms_all_requests": {
+        "min": 0.47,
+        "mean": 8.203,
+        "p50": 6.65,
+        "p95": 21.359,
+        "p99": 26.159,
+        "max": 27.761
+      },
+      "error_examples": [],
+      "workers": 50,
+      "round": 2
+    },
+    {
+      "requests": 400,
+      "successes": 400,
+      "errors": 0,
+      "status_counts": {
+        "200": 400
+      },
+      "elapsed_seconds": 0.433753,
+      "successful_requests_per_second": 922.18,
+      "latency_ms_all_requests": {
+        "min": 0.299,
+        "mean": 1.077,
+        "p50": 0.949,
+        "p95": 2.154,
+        "p99": 2.329,
+        "max": 2.438
+      },
+      "error_examples": [],
+      "workers": 1,
+      "round": 3
+    },
+    {
+      "requests": 400,
+      "successes": 400,
+      "errors": 0,
+      "status_counts": {
+        "200": 400
+      },
+      "elapsed_seconds": 0.09831,
+      "successful_requests_per_second": 4068.76,
+      "latency_ms_all_requests": {
+        "min": 0.45,
+        "mean": 2.111,
+        "p50": 1.925,
+        "p95": 3.533,
+        "p99": 6.769,
+        "max": 7.996
+      },
+      "error_examples": [],
+      "workers": 10,
+      "round": 3
+    },
+    {
+      "requests": 400,
+      "successes": 400,
+      "errors": 0,
+      "status_counts": {
+        "200": 400
+      },
+      "elapsed_seconds": 0.092116,
+      "successful_requests_per_second": 4342.33,
+      "latency_ms_all_requests": {
+        "min": 0.564,
+        "mean": 5.055,
+        "p50": 4.739,
+        "p95": 9.411,
+        "p99": 12.186,
+        "max": 16.84
+      },
+      "error_examples": [],
+      "workers": 25,
+      "round": 3
+    },
+    {
+      "requests": 400,
+      "successes": 400,
+      "errors": 0,
+      "status_counts": {
+        "200": 400
+      },
+      "elapsed_seconds": 0.096038,
+      "successful_requests_per_second": 4165.03,
+      "latency_ms_all_requests": {
+        "min": 0.961,
+        "mean": 9.263,
+        "p50": 7.854,
+        "p95": 20.002,
+        "p99": 25.835,
+        "max": 30.501
+      },
+      "error_examples": [],
+      "workers": 50,
+      "round": 3
+    }
+  ],
+  "read_workload_log": {
+    "bytes": 6656895,
+    "lines": 9214,
+    "sql_query_lines": 5939
+  },
+  "collectors": {
+    "synchronous": {
+      "request": {
+        "ms": 8904.58166701137,
+        "status": 200,
+        "ok": true
+      },
+      "response": {
+        "success": true,
+        "data": {
+          "collector_id": "sina_production",
+          "records_collected": 0,
+          "run_id": "c1a0e45e-c890-4aa7-9b2f-41632e4a8886"
+        },
+        "message": "Collected 0 records"
+      }
+    },
+    "asynchronous": {
+      "submit": {
+        "ms": 4.719666001619771,
+        "status": 202,
+        "ok": true
+      },
+      "job": {
+        "adapter_id": "adapter_sina_spot",
+        "collector_name": "sina_production",
+        "completed_at": "2026-10-22T06:12:27.295800Z",
+        "created_at": "2026-10-22T06:11:41.030267Z",
+        "details": {
+          "completed": 0,
+          "phase": "persisting",
+          "total": 0
+        },
+        "error_message": null,
+        "id": "37226ca2-2428-4e0a-b485-9ad0d8b22be7",
+        "max_items": 100,
+        "phase": "succeeded",
+        "progress": 100,
+        "result": {
+          "records_collected": 0
+        },
+        "run_id": "c24403a1-2875-4fbb-a33b-52e3c464a77e",
+        "started_at": "2026-10-22T06:11:41.061099Z",
+        "status": "succeeded",
+        "updated_at": "2026-10-22T06:12:27.295800Z"
+      },
+      "observed_statuses": [
+        "queued",
+        "running",
+        "succeeded"
+      ],
+      "seconds_after_acceptance": 46.402,
+      "duplicate_submission": {
+        "ms": 1.6330000071320683,
+        "status": 409,
+        "ok": true
+      },
+      "reads_during_job": {
+        "requests": 400,
+        "successes": 400,
+        "errors": 0,
+        "status_counts": {
+          "200": 400
+        },
+        "elapsed_seconds": 0.105029,
+        "successful_requests_per_second": 3808.46,
+        "latency_ms_all_requests": {
+          "min": 0.321,
+          "mean": 2.198,
+          "p50": 2.039,
+          "p95": 4.167,
+          "p99": 4.99,
+          "max": 6.038
+        },
+        "error_examples": [],
+        "workers": 10
+      }
+    }
+  },
+  "resources_after": "{\"BlockIO\":\"4.1kB / 332kB\",\"CPUPerc\":\"0.83%\",\"Container\":\"corn_backend\",\"ID\":\"e7c79b89fc66\",\"MemPerc\":\"0.20%\",\"MemUsage\":\"16.16MiB / 7.748GiB\",\"Name\":\"corn_backend\",\"NetIO\":\"95.8MB / 79.5MB\",\"PIDs\":\"11\"}\n{\"BlockIO\":\"131MB / 52.3MB\",\"CPUPerc\":\"1.28%\",\"Container\":\"corn_postgres\",\"ID\":\"4d7b35801579\",\"MemPerc\":\"1.06%\",\"MemUsage\":\"84.18MiB / 7.748GiB\",\"Name\":\"corn_postgres\",\"NetIO\":\"14.7MB / 93.5MB\",\"PIDs\":\"19\"}\n{\"BlockIO\":\"63.1MB / 2.35MB\",\"CPUPerc\":\"1.26%\",\"Container\":\"corn_redis\",\"ID\":\"cf34ab2617c5\",\"MemPerc\":\"0.23%\",\"MemUsage\":\"17.91MiB / 7.748GiB\",\"Name\":\"corn_redis\",\"NetIO\":\"645kB / 219kB\",\"PIDs\":\"6\"}\n",
+  "container_after": {
+    "status": "running",
+    "health": "healthy",
+    "restarts": 0
+  }
+}

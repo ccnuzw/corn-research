@@ -6,6 +6,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 from pathlib import Path
+import time
 
 
 @dataclass(frozen=True)
@@ -19,8 +20,8 @@ class BoyarConfig:
     max_interval: float = 3.0
     max_retries: int = 3
     log_dir: str = field(default_factory=lambda: os.getenv("COLLECTOR_LOG_DIR", "/app/logs/collectors"))
-    log_max_bytes: int = 10 * 1024 * 1024
-    log_backup_count: int = 5
+    log_max_bytes: int = field(default_factory=lambda: int(os.getenv("COLLECTOR_LOG_MAX_BYTES", str(10 * 1024 * 1024))))
+    log_backup_count: int = field(default_factory=lambda: int(os.getenv("COLLECTOR_LOG_BACKUP_COUNT", "5")))
     user_agents: tuple = (
         "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 Version/16.0 Mobile/15E148 Safari/604.1",
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36",
@@ -70,8 +71,27 @@ def configure_boyar_logging(config, log_dir=None):
             path, maxBytes=config.log_max_bytes, backupCount=config.log_backup_count,
             encoding="utf-8", delay=True,
         )
-        handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+        formatter = logging.Formatter("%(asctime)sZ %(levelname)s %(name)s: %(message)s")
+        formatter.converter = time.gmtime
+        handler.setFormatter(formatter)
         logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(collector_log_level())
     logger.propagate = True
     return logger
+
+
+def collector_log_level():
+    level = os.getenv("COLLECTOR_LOG_LEVEL", "INFO").upper()
+    if level not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+        raise ValueError("Invalid COLLECTOR_LOG_LEVEL")
+    return getattr(logging, level)
+
+
+def configure_runtime_logging():
+    # stdout remains reserved for the Rust bridge's JSON protocol.
+    import sys
+    handler = logging.StreamHandler(sys.stderr)
+    formatter = logging.Formatter("%(asctime)sZ %(levelname)s %(name)s: %(message)s")
+    formatter.converter = time.gmtime
+    handler.setFormatter(formatter)
+    logging.basicConfig(level=collector_log_level(), handlers=[handler], force=True)

@@ -10,6 +10,7 @@
 from .base import BaseCollector, RawDataRecord
 from .boyar_production import BoyarProductionCollector
 from .sina_production import SinaProductionCollector
+from .dce_production import DceProductionCollector
 from .mock import MockCollector
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     'RawDataRecord',
     'BoyarProductionCollector',
     'SinaProductionCollector',
+    'DceProductionCollector',
     'MockCollector',
 ]

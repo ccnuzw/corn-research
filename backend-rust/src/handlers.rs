@@ -43,6 +43,15 @@ pub async fn list_collectors() -> impl IntoResponse {
             total_runs: 0,
             success_rate: 0.0,
         },
+        CollectorInfo {
+            id: "dce".to_string(),
+            name: "大连商品交易所".to_string(),
+            status: CollectorStatus::Idle,
+            last_run: None,
+            last_success: None,
+            total_runs: 0,
+            success_rate: 0.0,
+        },
     ];
     
     Json(ApiResponse {
@@ -112,7 +121,7 @@ async fn execute_collector(
         .map_err(|e| CornError::Internal(e.to_string()))?;
     let run_id = history.id.clone();
     let db = state.db.clone();
-    let persist = adapter.script_file == "sina_production";
+    let persist = matches!(adapter.script_file.as_str(), "sina_production" | "dce_production");
     // Keep finalization alive if the HTTP client disconnects mid-collection.
     let count = tokio::spawn(crate::collection_execution::execute_run(
         db, adapter, history, max_items, persist,

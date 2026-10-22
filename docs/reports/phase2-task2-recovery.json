@@ -1,0 +1,61 @@
+[
+  {
+    "adapter_id": "test_recovery_d29368eef17f",
+    "collector_name": "mock",
+    "completed_at": "2026-10-22T05:47:59.964452Z",
+    "created_at": "2026-10-22T05:47:55.896935Z",
+    "details": {
+      "completed": 0,
+      "phase": "persisting",
+      "total": 0
+    },
+    "error_message": null,
+    "id": "5bb0ffe9-7e01-4fee-8507-c5b0ae91eb3d",
+    "max_items": 2,
+    "phase": "succeeded",
+    "progress": 100,
+    "result": {
+      "records_collected": 10
+    },
+    "run_id": "95bf0254-84d3-4d9b-8222-c41720312041",
+    "started_at": "2026-10-22T05:47:59.797463Z",
+    "status": "succeeded",
+    "updated_at": "2026-10-22T05:47:59.964452Z"
+  },
+  {
+    "adapter_id": "test_recovery_d209f9947256",
+    "collector_name": "mock",
+    "completed_at": "2026-10-22T05:47:59.794923Z",
+    "created_at": "2026-10-22T05:47:55.967283Z",
+    "details": {},
+    "error_message": "Backend restarted before collection completed",
+    "id": "e2174865-09cd-4a78-897f-fc2e225ea39a",
+    "max_items": 2,
+    "phase": "failed",
+    "progress": 0,
+    "result": null,
+    "run_id": "8a1f4d1d-05a2-4dc7-bebc-32371ad83cf7",
+    "started_at": null,
+    "status": "failed",
+    "updated_at": "2026-10-22T05:47:59.794923Z"
+  },
+  {
+    "adapter_id": "test_recovery_c8e3bd842178",
+    "collector_name": "mock",
+    "completed_at": "2026-10-22T05:47:59.794923Z",
+    "created_at": "2026-10-22T05:47:56.032797Z",
+    "details": {},
+    "error_message": null,
+    "id": "6a31787e-568b-4ce7-96b4-721b635b595b",
+    "max_items": 2,
+    "phase": "succeeded",
+    "progress": 100,
+    "result": {
+      "records_collected": 2
+    },
+    "run_id": "aa203396-2e7d-4626-b7fe-a0f66e2aba7b",
+    "started_at": null,
+    "status": "succeeded",
+    "updated_at": "2026-10-22T05:47:59.794923Z"
+  }
+]

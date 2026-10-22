@@ -1,0 +1,42 @@
+# Optional overlay: -f docker-compose.prod.yml -f docker-compose.monitoring.yml
+services:
+  ops-exporter:
+    image: prom/node-exporter:v1.9.1
+    profiles: [monitoring]
+    command:
+      - --collector.disable-defaults
+      - --collector.textfile
+      - --collector.textfile.directory=/textfile
+    volumes:
+      - ./monitoring/textfile:/textfile:ro
+    restart: unless-stopped
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    profiles: [monitoring]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=2GB
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-19090}:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  prometheus_data:

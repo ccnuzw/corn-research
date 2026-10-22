@@ -1,0 +1,47 @@
+{
+  "job": {
+    "adapter_id": "adapter_boyar_arrivals",
+    "collector_name": "boyar_production",
+    "completed_at": "2026-10-22T05:45:51.300983Z",
+    "created_at": "2026-10-22T05:45:47.359110Z",
+    "details": {
+      "completed": 0,
+      "phase": "persisting",
+      "total": 0
+    },
+    "error_message": null,
+    "id": "5f507393-a230-43bc-8f71-782d62a89255",
+    "max_items": 100,
+    "phase": "succeeded",
+    "progress": 100,
+    "result": {
+      "records_collected": 0
+    },
+    "run_id": "5abb4c4b-0818-4d6d-9268-a3efb20d504d",
+    "started_at": "2026-10-22T05:45:47.448800Z",
+    "status": "succeeded",
+    "updated_at": "2026-10-22T05:45:51.300983Z"
+  },
+  "progress_observed": [
+    [
+      "queued",
+      0,
+      "queued"
+    ],
+    [
+      "running",
+      5,
+      "scanning"
+    ],
+    [
+      "running",
+      45,
+      "scanning"
+    ],
+    [
+      "succeeded",
+      100,
+      "succeeded"
+    ]
+  ]
+}

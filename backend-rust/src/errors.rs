@@ -9,6 +9,9 @@ pub enum CornError {
     #[error("Python error: {0}")]
     Python(String),
     
+    #[error("Conflict: {0}")]
+    Conflict(String),
+
     #[error("Validation error: {0}")]
     Validation(String),
     
@@ -38,6 +41,7 @@ impl axum::response::IntoResponse for CornError {
         use serde_json::json;
         
         let (status, message) = match self {
+            CornError::Conflict(msg) => (StatusCode::CONFLICT, msg),
             CornError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             CornError::Validation(msg) => (StatusCode::BAD_REQUEST, msg),
             CornError::Config(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),

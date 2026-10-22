@@ -23,6 +23,7 @@ import redis
 from tenacity import Retrying, retry_if_exception, stop_after_attempt, wait_exponential
 
 from config import BoyarConfig, configure_boyar_logging
+from progress import report_progress
 from .base import BaseCollector, RawDataRecord
 
 
@@ -66,6 +67,7 @@ class BoyarProductionCollector(BaseCollector):
             self.config.redis_url, decode_responses=True,
             socket_connect_timeout=5, socket_timeout=5,
         )
+        self.configure_cursor("boyar", redis_client=self.redis_client, key=self.config.cursor_key)
         self.data_dir = Path(data_dir)
         self.request_timeout = self.config.request_timeout
         self._sleep = sleep
@@ -114,7 +116,7 @@ class BoyarProductionCollector(BaseCollector):
         ) + 60)
         if not incremental:
             return self._collect_batch(start_id, end_id, max_items, None)
-        lock = self.redis_client.lock(self.config.cursor_key + ":lock", timeout=lock_ttl)
+        lock = self.cursor.lock(timeout=lock_ttl)
         if not lock.acquire(blocking=False):
             raise RuntimeError("Another Boyar incremental collection is running")
         try:
@@ -144,6 +146,8 @@ class BoyarProductionCollector(BaseCollector):
         self.logger.info("Boyar scanning article IDs %s..%s", start_id, stop_id)
         records = []
         checkpoint = None
+        scan_total = max(0, stop_id - start_id + 1)
+        report_progress("scanning", 0, scan_total, records=0)
         for article_id in range(start_id, stop_id + 1):
             self.stats["scanned"] += 1
             try:
@@ -178,6 +182,8 @@ class BoyarProductionCollector(BaseCollector):
                 records.append(record)
             # A successful non-target page is processed too, avoiding endless rescans.
             checkpoint = article_id
+            report_progress("scanning", self.stats["scanned"], scan_total,
+                            records=len(records), article_id=article_id)
             if len(records) >= max_items:
                 break
         self.logger.info("Boyar collected %s records; checkpoint=%s", len(records), checkpoint)
@@ -340,24 +346,10 @@ class BoyarProductionCollector(BaseCollector):
         return last_id + 1 if last_id is not None else self.config.start_article_id
 
     def _last_article_id(self):
-        cursor = self.redis_client.get(self.config.cursor_key)
-        if cursor is None:
-            return None
-        value = int(cursor)
-        if value < 1:
-            raise ValueError("Invalid Boyar cursor in Redis")
-        return value
-    
+        return self.get_cursor()
+
     def _update_cursor(self, article_id: int):
-        """
-        更新Redis游标
-        
-        Args:
-            article_id: 当前采集的文章ID
-        """
-        previous = self._last_article_id()
-        if previous is None or article_id > previous:
-            self.redis_client.set(self.config.cursor_key, article_id)
+        return self.advance_cursor(article_id)
 
 
 # 测试代码

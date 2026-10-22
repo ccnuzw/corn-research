@@ -1,0 +1,35 @@
+name: corn-restore
+
+# Isolated data-only environment: no init migrations, application or public ports.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-corn_research}
+      POSTGRES_USER: ${POSTGRES_USER:-corn_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set an isolated restore password}
+    volumes:
+      - restore_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set an isolated restore password}
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?Set an isolated restore password}
+    command: ["sh", "-ec", "exec redis-server --appendonly yes --appendfsync everysec --maxmemory-policy noeviction --requirepass \"$$REDIS_PASSWORD\""]
+    volumes:
+      - restore_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  restore_postgres_data:
+  restore_redis_data:

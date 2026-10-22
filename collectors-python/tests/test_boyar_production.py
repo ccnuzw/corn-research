@@ -43,6 +43,13 @@ class FakeRedis:
     def set(self, key, value):
         self.data[key] = str(value)
 
+    def eval(self, script, numkeys, key, exists, expected, value):
+        current = self.get(key)
+        if (exists == '0' and current is not None) or (exists == '1' and current != expected):
+            return 0
+        self.set(key, value)
+        return 1
+
     def lock(self, key, timeout):
         return FakeLock(self)
 

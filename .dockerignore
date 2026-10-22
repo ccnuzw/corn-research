@@ -1,5 +1,6 @@
 # Rust
 target/
+**/target/
 **/*.rs.bk
 *.pdb
 
@@ -46,3 +47,14 @@ docs/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Never send local secrets or backups to the builder.
+.env
+.env.*
+secrets/
+backups/
+nginx/ssl/
+nginx/htpasswd
+team_config.json
+opencode.jsonc
+monitoring/textfile/

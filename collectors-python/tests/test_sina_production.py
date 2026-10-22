@@ -68,21 +68,21 @@ class TestSinaCollector(unittest.TestCase):
     def test_collect_and_limit(self):
         for limit in (1, 2, 100):
             self.collector._request = Mock(side_effect=[PAGE, ARTICLE, QUOTE])
-            rows = self.collector.collect(max_items=limit)
+            rows = self.collector.collect(max_items=limit, incremental=False)
             self.assertEqual(len(rows), min(limit, 3))
             self.assertEqual(rows[0].indicator, '玉米期货价格')
         for limit in (0, -1, True):
-            with self.assertRaises(ValueError): self.collector.collect(max_items=limit)
+            with self.assertRaises(ValueError): self.collector.collect(max_items=limit, incremental=False)
 
     def test_missing_table_never_returns_mock(self):
         self.collector._request = Mock(return_value='<html>No corn table</html>')
-        with self.assertRaises(SinaSourceError): self.collector.collect()
+        with self.assertRaises(SinaSourceError): self.collector.collect(incremental=False)
 
     def test_newest_report_selected_and_external_link_ignored(self):
         old = PAGE.replace('2026-10-22', '2026-10-21').replace('2026年10月22日', '2026年10月21日')
         bad = PAGE.replace('finance.sina.com.cn', 'evil.invalid')
         self.collector._request = Mock(side_effect=[old+bad+PAGE, ARTICLE, QUOTE])
-        self.collector.collect()
+        self.collector.collect(incremental=False)
         self.assertEqual(self.collector._request.call_args_list[1].args[0], URL)
 
     def test_retry_pacing_headers_and_encoding(self):
@@ -122,7 +122,7 @@ class TestSinaCollector(unittest.TestCase):
     def test_index_fallback_when_channel_returns_mobile_shell(self):
         shell = '<title>CBOT-玉米(C)-期货行情</title><div id="app"></div>'
         self.collector._request = Mock(side_effect=[shell, PAGE, ARTICLE, QUOTE])
-        rows = self.collector.collect()
+        rows = self.collector.collect(incremental=False)
         self.assertEqual(len(rows), 3)
         self.assertEqual(self.collector._request.call_args_list[1].args[0],
                          'https://finance.sina.com.cn/futuremarket/')
@@ -143,13 +143,13 @@ class TestSinaCollector(unittest.TestCase):
     def test_broken_candidate_does_not_hide_next_valid_report(self):
         other = PAGE.replace('doc-test', 'doc-other')
         self.collector._request = Mock(side_effect=[PAGE+other, ARTICLE.replace('2,190', '--'), ARTICLE, QUOTE])
-        self.assertEqual(len(self.collector.collect()), 3)
+        self.assertEqual(len(self.collector.collect(incremental=False)), 3)
 
     def test_exhausted_candidates_include_diagnostics(self):
         self.collector._request = Mock(side_effect=[PAGE, '<html>unmatched response</html>'])
         with self.assertLogs('collectors.sina_production', level='WARNING') as logs:
             with self.assertRaises(SinaSourceError) as error:
-                self.collector.collect()
+                self.collector.collect(incremental=False)
         self.assertIn('candidates=1; attempted=1', str(error.exception))
         self.assertIn(URL, str(error.exception))
         self.assertIn('missing_report_date', '\n'.join(logs.output))
@@ -159,6 +159,11 @@ class TestSinaCollector(unittest.TestCase):
         rows = self.collector._parse_spot(html, URL)
         self.assertEqual(rows[0].business_date, '2026-10-22')
         self.assertIsNone(rows[0].published_at)
+
+    def test_processor_reports_rank_before_generic_prices(self):
+        generic = PAGE.replace('doc-test', 'doc-port').replace('2026年10月22日玉米豆粕市场信息分享',
+                                                             '10月22日南北港口新季玉米价格')
+        self.assertEqual(self.collector._discover_articles(generic + PAGE)[0], URL)
 
 
 if __name__ == '__main__':

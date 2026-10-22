@@ -1,0 +1,110 @@
+{
+  "cursor_before": {
+    "collector:boyar:last_article_id": "1267906",
+    "collector:sina:last_date": null,
+    "collector:sina:last_date:futures": null
+  },
+  "runs": [
+    {
+      "job": {
+        "adapter_id": "adapter_sina_spot",
+        "collector_name": "sina_production",
+        "completed_at": "2026-10-22T05:49:30.348633Z",
+        "created_at": "2026-10-22T05:48:33.110165Z",
+        "details": {
+          "completed": 0,
+          "phase": "persisting",
+          "total": 0
+        },
+        "error_message": null,
+        "id": "1d017485-426e-48d9-9d34-1db39b099e11",
+        "max_items": 100,
+        "phase": "succeeded",
+        "progress": 100,
+        "result": {
+          "records_collected": 41
+        },
+        "run_id": "b11b34d4-7020-4e78-83e9-527c32f18a80",
+        "started_at": "2026-10-22T05:48:33.131188Z",
+        "status": "succeeded",
+        "updated_at": "2026-10-22T05:49:30.348633Z"
+      },
+      "history": {
+        "id": "b11b34d4-7020-4e78-83e9-527c32f18a80",
+        "adapter_id": "adapter_sina_spot",
+        "started_at": "2026-10-22T05:48:33.131732Z",
+        "completed_at": "2026-10-22T05:49:30.343937Z",
+        "status": "success",
+        "new_records": 0,
+        "duplicate_records": 41,
+        "failed_records": 0,
+        "start_cursor": null,
+        "end_cursor": null,
+        "error_message": null,
+        "records_collected": 41
+      },
+      "records_before": 81,
+      "records_after": 81,
+      "duration_seconds": 57.467
+    },
+    {
+      "job": {
+        "adapter_id": "adapter_sina_spot",
+        "collector_name": "sina_production",
+        "completed_at": "2026-10-22T05:49:35.809845Z",
+        "created_at": "2026-10-22T05:49:30.645829Z",
+        "details": {
+          "completed": 0,
+          "phase": "persisting",
+          "total": 0
+        },
+        "error_message": null,
+        "id": "3aea20e9-be7b-4cee-b1d7-bb3bcdf43f8b",
+        "max_items": 100,
+        "phase": "succeeded",
+        "progress": 100,
+        "result": {
+          "records_collected": 0
+        },
+        "run_id": "d2f34838-2042-4a7c-9b23-906865a9b5a1",
+        "started_at": "2026-10-22T05:49:30.820761Z",
+        "status": "succeeded",
+        "updated_at": "2026-10-22T05:49:35.809845Z"
+      },
+      "history": {
+        "id": "d2f34838-2042-4a7c-9b23-906865a9b5a1",
+        "adapter_id": "adapter_sina_spot",
+        "started_at": "2026-10-22T05:49:30.821364Z",
+        "completed_at": "2026-10-22T05:49:35.808588Z",
+        "status": "success",
+        "new_records": 0,
+        "duplicate_records": 0,
+        "failed_records": 0,
+        "start_cursor": null,
+        "end_cursor": null,
+        "error_message": null,
+        "records_collected": 0
+      },
+      "records_before": 81,
+      "records_after": 81,
+      "duration_seconds": 5.404
+    }
+  ],
+  "cursor_after": {
+    "collector:boyar:last_article_id": "1267906",
+    "collector:sina:last_date": "2026-10-22",
+    "collector:sina:last_date:futures": "2026-10-22"
+  },
+  "health": {
+    "success": true,
+    "data": "Corn Backend V2 is running",
+    "message": null
+  },
+  "container": {
+    "status": "running",
+    "health": "healthy",
+    "restart_count": 0,
+    "image": "sha256:74e9252898b9f884337f7087c73cb5ccce284b0064e288b1f752548321b59d02",
+    "standard_config": true
+  }
+}

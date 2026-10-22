@@ -1,0 +1,113 @@
+{
+  "runs": [
+    {
+      "response": {
+        "success": true,
+        "data": {
+          "collector_id": "sina_production",
+          "records_collected": 41,
+          "run_id": "ff65088e-5766-4c7f-8bdb-f65ab016118c"
+        },
+        "message": "Collected 41 records"
+      },
+      "history": {
+        "id": "ff65088e-5766-4c7f-8bdb-f65ab016118c",
+        "adapter_id": "adapter_sina_spot",
+        "started_at": "2026-10-22T04:59:37.388530Z",
+        "completed_at": "2026-10-22T04:59:45.882266Z",
+        "status": "success",
+        "new_records": 0,
+        "duplicate_records": 41,
+        "failed_records": 0,
+        "start_cursor": null,
+        "end_cursor": null,
+        "error_message": null,
+        "records_collected": 41
+      }
+    },
+    {
+      "response": {
+        "success": true,
+        "data": {
+          "collector_id": "sina_production",
+          "records_collected": 41,
+          "run_id": "9df80137-dd8b-43f1-8723-a2388086cb9a"
+        },
+        "message": "Collected 41 records"
+      },
+      "history": {
+        "id": "9df80137-dd8b-43f1-8723-a2388086cb9a",
+        "adapter_id": "adapter_sina_spot",
+        "started_at": "2026-10-22T04:59:45.917173Z",
+        "completed_at": "2026-10-22T04:59:52.370971Z",
+        "status": "success",
+        "new_records": 0,
+        "duplicate_records": 41,
+        "failed_records": 0,
+        "start_cursor": null,
+        "end_cursor": null,
+        "error_message": null,
+        "records_collected": 41
+      }
+    },
+    {
+      "response": {
+        "success": true,
+        "data": {
+          "collector_id": "sina_production",
+          "records_collected": 41,
+          "run_id": "e6c4beb8-85a1-4706-8105-5434e987d142"
+        },
+        "message": "Collected 41 records"
+      },
+      "history": {
+        "id": "e6c4beb8-85a1-4706-8105-5434e987d142",
+        "adapter_id": "adapter_sina_spot",
+        "started_at": "2026-10-22T04:59:52.405278Z",
+        "completed_at": "2026-10-22T04:59:57.707397Z",
+        "status": "success",
+        "new_records": 0,
+        "duplicate_records": 41,
+        "failed_records": 0,
+        "start_cursor": null,
+        "end_cursor": null,
+        "error_message": null,
+        "records_collected": 41
+      }
+    }
+  ],
+  "verified_non_mock_records": 81,
+  "verification": {
+    "image": "sha256:34fad2e67f4c7a2957e71abe67874b52a096ba39787bb928aa379d62f62e0115",
+    "container_status": "running",
+    "health": "healthy",
+    "restart_count": 0,
+    "tests": {
+      "python_collectors": {
+        "passed": 53
+      },
+      "api_regression": {
+        "passed": 10
+      },
+      "collection_history": {
+        "passed": 5
+      },
+      "p1_release_regression": {
+        "passed": 3
+      },
+      "scheduler_failure": {
+        "passed": 1
+      },
+      "rust": {
+        "passed": 7,
+        "ignored": 1
+      }
+    },
+    "isolated_invalid_database_startup": {
+      "exit_code": 1,
+      "panic": false
+    },
+    "production_logs_have_panic": false,
+    "remaining_direct_unwrap_expect": "handlers.rs test fixtures only; none in production main/python_bridge/collection_execution/handlers"
+  }
+}

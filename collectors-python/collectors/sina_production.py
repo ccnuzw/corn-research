@@ -32,7 +32,13 @@ class SinaProductionCollector(BaseCollector):
     source_url = site_url
     source_type = "public_media"
 
-    def __init__(self, *, opener=None, sleep=None, uniform=None, symbols=None):
+    def __init__(self, *, opener=None, sleep=None, uniform=None, symbols=None,
+                 redis_client=None, cursor_key=None):
+        self.configure_cursor("sina", "date", redis_client=redis_client,
+                              key=cursor_key or os.getenv("SINA_CURSOR_KEY"))
+        from cursor import CursorManager
+        self.futures_cursor = CursorManager("sina", "date", redis_client=self.cursor.client,
+            key=self.cursor.key + ":futures")
         self._opener = opener or urllib.request.urlopen
         self._sleep = sleep or time.sleep
         self._uniform = uniform or random.uniform
@@ -186,6 +192,9 @@ class SinaProductionCollector(BaseCollector):
     def _discover_articles(self, html):
         page = BeautifulSoup(html, "lxml")
         candidates = []
+        report_links = set()
+        self._article_dates = {}
+        self._report_urls = report_links
         for a in page.find_all("a", href=True):
             title = a.get_text(strip=True) + " " + a.get("title", "")
             url = urljoin(self.site_url, a["href"])
@@ -198,8 +207,17 @@ class SinaProductionCollector(BaseCollector):
                     and any(word in title for word in ("市场信息", "行业资讯", "现货", "价格", "日报"))
                     and url not in candidates):
                 candidates.append(url)
+                if any(word in title for word in ("市场信息", "行业资讯")):
+                    report_links.add(url)
+                    match = re.search(r"\d{4}[年/-]\d{1,2}[月/-]\d{1,2}日?", title)
+                    if match:
+                        try:
+                            self._article_dates[url] = self._parse_date(match[0])
+                        except ValueError:
+                            logger.warning("invalid_link_observation_date url=%s title=%r", url, title)
         candidates.sort(key=lambda url: (
             re.search(r"/\d{4}-\d{2}-\d{2}/", url)[0],
+            url in report_links,
             any(word in url for word in ("/wemedia/", "/agri/")),
         ), reverse=True)
         logger.info("index_parsed title=%r bytes=%d candidates=%d",
@@ -229,7 +247,28 @@ class SinaProductionCollector(BaseCollector):
                 }))
         return records
 
-    def collect(self, max_items: int = 100, **kwargs) -> List[RawDataRecord]:
+    def collect(self, max_items: int = 100, incremental=True, **kwargs) -> List[RawDataRecord]:
+        if isinstance(max_items, bool) or not isinstance(max_items, int) or max_items < 1:
+            raise ValueError("max_items must be a positive integer")
+        if not incremental:
+            return self._collect_prices(max_items)
+        lock = self.cursor.lock(timeout=3600)
+        if not lock.acquire(blocking=False):
+            raise RuntimeError("Another Sina incremental collection is running")
+        try:
+            spot_date, futures_date = self.get_cursor(), self.futures_cursor.get()
+            records = self._collect_prices(max_items, spot_date, futures_date)
+            logger.info("cursor_candidates spot_before=%s futures_before=%s updates=%s",
+                        spot_date, futures_date, self._completed_dates)
+            for topic, manager in (("corn_spot_price", self.cursor),
+                                   ("corn_futures_price", self.futures_cursor)):
+                if topic in self._completed_dates:
+                    manager.advance(self._completed_dates[topic])
+            return records
+        finally:
+            lock.release()
+
+    def _collect_prices(self, max_items, spot_date=None, futures_date=None):
         if isinstance(max_items, bool) or not isinstance(max_items, int) or max_items < 1:
             raise ValueError("max_items must be a positive integer")
         candidates = self._discover_articles(self._fetch_page())
@@ -238,7 +277,13 @@ class SinaProductionCollector(BaseCollector):
             candidates = self._discover_articles(self._request("https://finance.sina.com.cn/futuremarket/"))
         spot = []
         failures = []
+        skipped_existing = False
         for url in candidates[:5]:
+            known_date = self._article_dates.get(url)
+            if spot_date and known_date and known_date <= spot_date:
+                logger.info("incremental_skip_report url=%s date=%s checkpoint=%s", url, known_date, spot_date)
+                skipped_existing = True
+                break
             try:
                 spot = self._parse_spot(self._request(url), url)
             except (SinaSourceError, ValueError, urllib.error.URLError, TimeoutError, ConnectionError) as exc:
@@ -248,13 +293,25 @@ class SinaProductionCollector(BaseCollector):
             if spot:
                 break
             failures.append(f"{url}: no dated corn processor table")
-        if not spot:
+        if not spot and not skipped_existing:
             detail = "; ".join(failures) or "no eligible Sina article links (possible redirect or schema change)"
             raise SinaSourceError(f"No dated corn processor price table found; candidates={len(candidates)}; "
                                   f"attempted={min(len(candidates), 5)}; {detail}; no mock fallback")
         quote_url = "https://hq.sinajs.cn/list=" + ",".join(self.symbols)
         futures = self._parse_futures(self._request(quote_url), quote_url)
-        # Reserve space for the futures quote; max_items always caps the full batch.
-        records = (futures + spot)[:max_items]
+        spot = [r for r in spot if spot_date is None or r.business_date > spot_date]
+        futures = [r for r in futures if futures_date is None or r.business_date > futures_date]
+        eligible = futures + spot
+        records = eligible[:max_items]
+        # Never checkpoint a date whose observations were truncated by max_items.
+        self._completed_dates = {}
+        for topic in ("corn_spot_price", "corn_futures_price"):
+            stream = [r for r in eligible if r.metadata["topic_name"] == topic]
+            for day in sorted({r.business_date for r in stream}):
+                expected = [r for r in stream if r.business_date == day]
+                returned = [r for r in records if r.metadata["topic_name"] == topic and r.business_date == day]
+                if len(expected) != len(returned):
+                    break
+                self._completed_dates[topic] = day
         logger.info("collection_complete spot=%d futures=%d returned=%d", len(spot), len(futures), len(records))
         return records
