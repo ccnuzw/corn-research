@@ -8,6 +8,10 @@ cd "$ROOT"
 ENV_FILE=${ENV_FILE:-.env.production}
 BACKUP_DIR=${BACKUP_DIR:-"$ROOT/backups"}
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml)
+if [[ "${BACKUP_MAINTENANCE_CONFIRMED:-}" != "1" ]]; then
+    echo "Confirm all writers stopped: BACKUP_MAINTENANCE_CONFIRMED=1" >&2
+    exit 1
+fi
 mkdir -p "$BACKUP_DIR"
 LOCK="$BACKUP_DIR/.backup-lock"
 if ! mkdir "$LOCK" 2>/dev/null; then
@@ -32,12 +36,24 @@ mkdir "$STAGING"
 "${COMPOSE[@]}" exec -T postgres sh -ec \
     'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom --no-owner --no-acl' \
     > "$STAGING/postgres.dump"
+"${COMPOSE[@]}" exec -T postgres pg_restore --list < "$STAGING/postgres.dump" > /dev/null
 "${COMPOSE[@]}" exec -T redis redis-cli --rdb /tmp/corn-backup.rdb >&2
+"${COMPOSE[@]}" exec -T redis redis-check-rdb /tmp/corn-backup.rdb >&2
 "${COMPOSE[@]}" cp redis:/tmp/corn-backup.rdb "$STAGING/redis.rdb" >&2
 "${COMPOSE[@]}" exec -T redis rm /tmp/corn-backup.rdb
 tar -czf "$STAGING/html-data.tar.gz" -C "$ROOT" data
 git rev-parse HEAD > "$STAGING/code-version.txt"
 "${COMPOSE[@]}" images -q > "$STAGING/image-ids.txt"
+python3 - "$STAGING" <<'PY'
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+import sys
+
+metadata = {'snapshot_completed_at': datetime.now(timezone.utc).isoformat(),
+            'writers_stopped_confirmed': True, 'schema_version': 1}
+(Path(sys.argv[1]) / 'backup-metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
+PY
 python3 - "$STAGING" <<'PY'
 import hashlib
 import json
@@ -54,6 +70,7 @@ for path in sorted(directory.iterdir()):
     checksums[path.name] = digest.hexdigest()
 (directory / 'manifest.json').write_text(json.dumps(checksums, indent=2) + '\n')
 PY
+python3 scripts/verify-backup.py "$STAGING"
 FINAL="$BACKUP_DIR/$STAMP-$$"
 mv "$STAGING" "$FINAL"
 echo "Backup complete: $FINAL"

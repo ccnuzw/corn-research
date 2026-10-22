@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "record_type": "ccb_project_identity",
+  "project_id": "f592d8aeb4e533b3ec42cdd3c5f8d0bd677ad147f845394e137281d3516e92be",
+  "project_slug": "cornv2-f592d8ae",
+  "created_at": "2026-10-22T07:51:09.330782Z",
+  "bound_root": "/Users/apple/CornV2",
+  "binding_epoch": 1,
+  "identity_origin": "new-random",
+  "last_bound_at": "2026-10-22T07:51:09.330782Z",
+  "legacy_project_ids": []
+}

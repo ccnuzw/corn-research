@@ -43,9 +43,10 @@ def collect(root, compose):
         query = ("SELECT count(*) FILTER (WHERE status='queued'), "
                  "count(*) FILTER (WHERE status='running'), "
                  "COALESCE(EXTRACT(EPOCH FROM NOW()-min(created_at) FILTER (WHERE status='queued')),0), "
-                 "COALESCE(EXTRACT(EPOCH FROM NOW()-min(created_at) FILTER (WHERE status='running')),0) "
+                 "COALESCE(EXTRACT(EPOCH FROM NOW()-min(COALESCE(started_at,created_at)) FILTER (WHERE status='running')),0) "
                  "FROM async_jobs")
         result = run(compose, 'exec', '-T', 'postgres', 'sh', '-ec',
+                     'export PGOPTIONS="-c default_transaction_read_only=on -c statement_timeout=5000"; '
                      'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -At -F "|" -c "$1"',
                      'metrics', query)
         values = [float(value) for value in result.split('|')]
@@ -64,6 +65,8 @@ def collect(root, compose):
         emit('corn_redis_memory_used_ratio', used / maximum)
 
     probe('backend', backend)
+    probe('frontend', lambda: run(compose, 'exec', '-T', 'frontend', 'wget', '--quiet',
+                                  '--tries=1', '--timeout=5', '--spider', 'http://127.0.0.1:3000'))
     probe('postgres', postgres)
     probe('redis', redis)
     try:

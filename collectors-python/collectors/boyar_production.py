@@ -128,7 +128,10 @@ class BoyarProductionCollector(BaseCollector):
             self.stats["cursor_after"] = checkpoint if checkpoint is not None else last_id
             return records
         finally:
-            lock.release()
+            try:
+                lock.release()
+            except Exception as e:
+                self.logger.warning("Failed to release lock: %s", e)
 
     def _collect_batch(self, start_id, end_id, max_items, last_id):
         records, _ = self._scan(start_id, end_id, max_items, last_id)

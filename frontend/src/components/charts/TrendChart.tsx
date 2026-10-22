@@ -112,7 +112,7 @@ export function TrendChart() {
                 tickLine={false}
                 axisLine={false}
                 tickFormatter={(value) => {
-                  const date = new Date(value)
+                  const date = new Date(String(value ?? ''))
                   return `${date.getMonth() + 1}/${date.getDate()}`
                 }}
               />
@@ -130,10 +130,10 @@ export function TrendChart() {
                   borderRadius: '6px',
                 }}
                 labelFormatter={(value) => {
-                  const date = new Date(value)
+                  const date = new Date(String(value ?? ''))
                   return date.toLocaleDateString('zh-CN')
                 }}
-                formatter={(value: number) => [`¥${value.toFixed(2)}`, '价格']}
+                formatter={(value) => [`¥${Number(value ?? 0).toFixed(2)}`, '价格']}
               />
               <Line
                 type="monotone"

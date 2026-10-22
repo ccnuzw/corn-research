@@ -39,6 +39,10 @@ impl Repository {
             .one(db).await
     }
 
+    pub async fn list(db: &DatabaseConnection) -> Result<Vec<AsyncJob>, DbErr> {
+        AsyncJob::find_by_statement(sql("SELECT * FROM async_jobs ORDER BY created_at DESC LIMIT 100", vec![]))
+            .all(db).await
+    }
     pub async fn enqueue(db: &DatabaseConnection, collector: String, adapter: String, max: i32)
         -> Result<Uuid, DbErr> {
         let id = Uuid::new_v4();
@@ -120,6 +124,16 @@ pub async fn get(State(state): State<AppState>, Path(id): Path<Uuid>)
     let job = Repository::get(&state.db, id).await.map_err(|e| CornError::Internal(e.to_string()))?
         .ok_or_else(|| CornError::NotFound("Async job not found".into()))?;
     Ok(Json(serde_json::json!({"success": true, "data": job, "message": null})))
+}
+
+pub async fn list(State(state): State<AppState>)
+    -> Result<Json<serde_json::Value>, CornError> {
+    let jobs = Repository::list(&state.db).await.map_err(|e| CornError::Internal(e.to_string()))?;
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "data": jobs,
+        "total": jobs.len()
+    })))
 }
 
 pub async fn start(db: DatabaseConnection) -> anyhow::Result<()> {

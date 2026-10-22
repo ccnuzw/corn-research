@@ -2,7 +2,7 @@ use sqlx::{PgPool, postgres::PgPoolOptions, Row};
 use uuid::Uuid;
 use chrono::Utc;
 
-use crate::python_bridge::RawRecord;
+use crate::raw_record::RawRecord;
 use crate::cache::RedisCache;
 
 pub struct PostgresRepository {

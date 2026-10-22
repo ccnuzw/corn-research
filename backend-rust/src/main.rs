@@ -172,6 +172,7 @@ fn create_app(app_state: AppState) -> Router {
         .route("/api/collectors", get(handlers::list_collectors))
         .route("/api/collectors/run", post(handlers::run_collector_by_name))
         .route("/api/collectors/run/async", post(async_jobs::submit))
+        .route("/api/jobs", get(async_jobs::list))
         .route("/api/jobs/:id", get(async_jobs::get))
         .route("/api/collectors/:id/run", post(handlers::run_collector))
         .route("/api/collectors/:id/history", get(handlers::get_collector_history))

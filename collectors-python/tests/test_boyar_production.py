@@ -145,8 +145,10 @@ class BoyarTests(unittest.TestCase):
             records = self.collector.collect(end_id=100)
         self.assertEqual(len(records), 1)
         self.assertEqual(opener.call_count, 3)
-        self.assertIn("retry in 1.0s", logs.output[0])
-        self.assertIn("retry in 2.0s", logs.output[1])
+        retry_logs = [message for message in logs.output if "retry in " in message]
+        self.assertEqual(len(retry_logs), 2)
+        self.assertIn("retry in 1.0s", retry_logs[0])
+        self.assertIn("retry in 2.0s", retry_logs[1])
         self.assertGreaterEqual(len(self.clock.sleeps), 3)
         self.assertEqual(self.redis.get(KEY), "100")
 

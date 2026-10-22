@@ -73,6 +73,8 @@ class DceProductionCollector(BaseCollector):
             return None
         if not isinstance(value, str) or not re.fullmatch(r"(?:\d{4}-\d{2}-\d{2}|\d{8})", value):
             raise ValueError("Expected YYYY-MM-DD or YYYYMMDD: " + str(value))
+        if len(value) == 8:
+            value = f"{value[:4]}-{value[4:6]}-{value[6:]}"
         return date.fromisoformat(value)
 
     @staticmethod

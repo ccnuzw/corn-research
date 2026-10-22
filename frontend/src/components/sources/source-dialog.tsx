@@ -23,7 +23,7 @@ export function SourceDialog({ open, source, onClose }: SourceDialogProps) {
     name: '',
     domain: '',
     description: '',
-    status: 'active' as const,
+    status: 'active',
   })
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})

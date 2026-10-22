@@ -5,6 +5,7 @@
 pub mod cache;
 pub mod entities;
 pub mod processing;
+pub mod raw_record;
 // pub mod python_bridge;  // 暂时禁用PyO3
 pub mod repositories;
 

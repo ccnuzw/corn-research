@@ -1,0 +1,17 @@
+[Unit]
+Description=Corn read-only production metrics collection
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=corn
+WorkingDirectory=/srv/corn-production
+ExecStart=/usr/bin/python3 /srv/corn-production/scripts/collect-production-metrics.py
+TimeoutStartSec=150
+UMask=0022
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/corn-production/monitoring/textfile

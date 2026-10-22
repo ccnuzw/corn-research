@@ -1,18 +1,5 @@
 use pyo3::prelude::*;
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RawRecord {
-    pub business_date: String,
-    pub indicator_name: String,
-    pub value: f64,
-    pub unit: String,
-    pub region: Option<String>,
-    pub source_url: String,
-    pub original_text: Option<String>,
-    pub collector_id: String,
-    pub collected_at: String,
-}
+pub use crate::raw_record::RawRecord;
 
 pub struct PyO3Bridge;
 

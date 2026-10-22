@@ -114,7 +114,7 @@ export function TimelineChart() {
                 tickLine={false}
                 axisLine={false}
                 tickFormatter={(value) => {
-                  const date = new Date(value)
+                  const date = new Date(String(value ?? ''))
                   return `${date.getMonth() + 1}/${date.getDate()}`
                 }}
               />
@@ -131,10 +131,10 @@ export function TimelineChart() {
                   borderRadius: '6px',
                 }}
                 labelFormatter={(value) => {
-                  const date = new Date(value)
+                  const date = new Date(String(value ?? ''))
                   return date.toLocaleDateString('zh-CN')
                 }}
-                formatter={(value: number) => [`${value} 条`, '采集记录']}
+                formatter={(value) => [`${value ?? 0} 条`, '采集记录']}
               />
               <Area
                 type="monotone"

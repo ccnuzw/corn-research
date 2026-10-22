@@ -151,8 +151,8 @@ class ApiClient {
   async createSource(data: {
     id: string
     name: string
-    domain?: string
-    description?: string
+    domain?: string | null
+    description?: string | null
   }) {
     return this.request<Source>('/api/sources', {
       method: 'POST',
@@ -162,8 +162,8 @@ class ApiClient {
 
   async updateSource(id: string, data: {
     name?: string
-    domain?: string
-    description?: string
+    domain?: string | null
+    description?: string | null
     status?: string
   }) {
     return this.request<Source>(`/api/sources/${id}`, {

@@ -10,17 +10,17 @@ use corn_infrastructure::processing::{DeduplicationService, ValidationService, R
 
 /// 去重函数
 #[pyfunction]
-fn deduplicate_records(py: Python, records: Vec<&PyDict>) -> PyResult<Vec<PyDict>> {
+fn deduplicate_records(py: Python<'_>, records: Vec<Bound<'_, PyDict>>) -> PyResult<Vec<Py<PyDict>>> {
     // 转换Python dict为Rust结构
     let mut rust_records = Vec::new();
     
     for d in records {
         if let (Some(bd), Some(ind), Some(val), Some(reg), Some(url)) = (
-            d.get_item("business_date"),
-            d.get_item("indicator"),
-            d.get_item("value"),
-            d.get_item("region"),
-            d.get_item("source_url"),
+            d.get_item("business_date")?,
+            d.get_item("indicator")?,
+            d.get_item("value")?,
+            d.get_item("region")?,
+            d.get_item("source_url")?,
         ) {
             if let (Ok(business_date), Ok(indicator), Ok(value), Ok(region), Ok(source_url)) = (
                 bd.extract::<String>(),
@@ -46,13 +46,13 @@ fn deduplicate_records(py: Python, records: Vec<&PyDict>) -> PyResult<Vec<PyDict
     // 转换回Python dict
     let mut result = Vec::new();
     for r in deduped {
-        let dict = PyDict::new(py);
+        let dict = PyDict::new_bound(py);
         dict.set_item("business_date", r.business_date)?;
         dict.set_item("indicator", r.indicator)?;
         dict.set_item("value", r.value)?;
         dict.set_item("region", r.region)?;
         dict.set_item("source_url", r.source_url)?;
-        result.push(dict.clone());
+        result.push(dict.unbind());
     }
     
     Ok(result)
@@ -60,17 +60,17 @@ fn deduplicate_records(py: Python, records: Vec<&PyDict>) -> PyResult<Vec<PyDict
 
 /// 验证函数
 #[pyfunction]
-fn validate_records(py: Python, records: Vec<&PyDict>) -> PyResult<Py<PyDict>> {
+fn validate_records(py: Python<'_>, records: Vec<Bound<'_, PyDict>>) -> PyResult<Py<PyDict>> {
     // 转换
     let mut rust_records = Vec::new();
     
     for d in records {
         if let (Some(bd), Some(ind), Some(val), Some(reg), Some(url)) = (
-            d.get_item("business_date"),
-            d.get_item("indicator"),
-            d.get_item("value"),
-            d.get_item("region"),
-            d.get_item("source_url"),
+            d.get_item("business_date")?,
+            d.get_item("indicator")?,
+            d.get_item("value")?,
+            d.get_item("region")?,
+            d.get_item("source_url")?,
         ) {
             if let (Ok(business_date), Ok(indicator), Ok(value), Ok(region), Ok(source_url)) = (
                 bd.extract::<String>(),
@@ -94,22 +94,24 @@ fn validate_records(py: Python, records: Vec<&PyDict>) -> PyResult<Py<PyDict>> {
     let result = ValidationService::validate(rust_records);
     
     // 返回结果
-    let dict = PyDict::new(py);
+    let dict = PyDict::new_bound(py);
     dict.set_item("valid_count", result.valid.len())?;
     dict.set_item("invalid_count", result.invalid.len())?;
     
-    Ok(dict.into())
+    Ok(dict.unbind())
 }
 
 /// Python调用的处理函数
 #[pyfunction]
-fn process_raw_data(py: Python, records: Vec<&PyDict>) -> PyResult<ProcessResult> {
+fn process_raw_data(records: Vec<Bound<'_, PyDict>>) -> PyResult<ProcessResult> {
     let mut processed = Vec::new();
     
     for record in records {
         // 从Python字典提取数据
-        let value: f64 = record.get_item("value")?.unwrap().extract()?;
-        let indicator: String = record.get_item("indicator")?.unwrap().extract()?;
+        let value: f64 = record.get_item("value")?
+            .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err("value"))?.extract()?;
+        let indicator: String = record.get_item("indicator")?
+            .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err("indicator"))?.extract()?;
         
         // Rust验证逻辑
         if value > 0.0 && value < 100000.0 {
@@ -152,7 +154,7 @@ struct ProcessResult {
 
 /// Python模块定义
 #[pymodule]
-fn corn_rs(_py: Python, m: &PyModule) -> PyResult<()> {
+fn corn_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(deduplicate_records, m)?)?;
     m.add_function(wrap_pyfunction!(validate_records, m)?)?;
     m.add_function(wrap_pyfunction!(process_raw_data, m)?)?;

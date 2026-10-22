@@ -128,7 +128,7 @@ export function SourceChart() {
                   border: '1px solid hsl(var(--border))',
                   borderRadius: '6px',
                 }}
-                formatter={(value: number) => [`${value} 条`, '记录数']}
+                formatter={(value) => [`${value ?? 0} 条`, '记录数']}
               />
               <Bar
                 dataKey="count"

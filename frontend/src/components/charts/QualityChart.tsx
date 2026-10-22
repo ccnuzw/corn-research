@@ -110,8 +110,9 @@ export function QualityChart() {
                 cx="50%"
                 cy="50%"
                 labelLine={false}
-                label={({ grade, count, percent }) => 
-                  `${grade}级 ${count} (${(percent * 100).toFixed(0)}%)`
+                nameKey="grade"
+                label={({ name, value, percent }) =>
+                  `${name}级 ${value} (${((percent ?? 0) * 100).toFixed(0)}%)`
                 }
                 outerRadius={80}
                 fill="#8884d8"
@@ -127,9 +128,10 @@ export function QualityChart() {
                   border: '1px solid hsl(var(--border))',
                   borderRadius: '6px',
                 }}
-                formatter={(value: number, name: string, props: any) => {
-                  const percent = ((value / total) * 100).toFixed(1)
-                  return [`${value} 条 (${percent}%)`, `${props.payload.grade}级`]
+                formatter={(value, name) => {
+                  const count = Number(value ?? 0)
+                  const percent = (total > 0 ? (count / total) * 100 : 0).toFixed(1)
+                  return [`${count} 条 (${percent}%)`, `${name}级`]
                 }}
               />
               <Legend

@@ -9,7 +9,7 @@ use sea_orm::{
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::python_bridge::RawRecord;
+use crate::raw_record::RawRecord;
 use crate::cache::RedisCache;
 use crate::entities::{raw_collection_records, prelude::RawCollectionRecords};
 
