@@ -24,6 +24,7 @@ mod db;
 mod standardization;
 mod lineage_handlers;
 mod collection_handlers;
+mod collection_execution;
 
 use scheduler::JobManager;
 use notification::NotificationService;
@@ -47,7 +48,7 @@ struct AppState {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> std::process::ExitCode {
     // 加载环境变量
     dotenvy::dotenv().ok();
     
@@ -59,6 +60,17 @@ async fn main() {
         )
         .init();
 
+    match run_server().await {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(error) => {
+            tracing::error!(error = %error, "Backend startup/server failed");
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+async fn run_server() -> anyhow::Result<()> {
+    use anyhow::Context;
     tracing::info!("🌽 Corn Backend V2 starting...");
 
     // 初始化数据库连接
@@ -67,9 +79,11 @@ async fn main() {
     
     let db = db::connect(&database_url)
         .await
-        .expect("Failed to connect to database");
+        .context("Failed to connect to database")?;
     
     tracing::info!("✅ Database connected");
+    collection_execution::recover_interrupted_runs(&db).await
+        .context("Failed to recover interrupted collection runs")?;
 
     // 初始化通知服务
     let redis_url = std::env::var("REDIS_URL")
@@ -77,25 +91,16 @@ async fn main() {
     
     let notification_service = NotificationService::new(&redis_url)
         .await
-        .expect("Failed to initialize notification service");
+        .context("Failed to initialize notification service")?;
     
     // 初始化任务调度器
-    let job_manager = JobManager::new()
+    let job_manager = JobManager::new(db.clone(), notification_service.clone())
         .await
-        .expect("Failed to initialize job manager");
+        .context("Failed to initialize job manager")?;
     
     job_manager.start()
         .await
-        .expect("Failed to start job scheduler");
-    
-    // 添加每日采集任务（每天8:00）
-    job_manager
-        .add_daily_collection_job(vec![
-            "boyar".to_string(),
-            "sina".to_string(),
-        ])
-        .await
-        .expect("Failed to add daily collection job");
+        .context("Failed to start job scheduler")?;
     
     // 初始化标准化服务
     let standardization_service = StandardizationService::new(db.clone());
@@ -170,6 +175,7 @@ async fn main() {
         .route("/api/scheduler/jobs", get(list_jobs))
         .route("/api/scheduler/jobs", post(create_job))
         .route("/api/scheduler/jobs/:id", post(trigger_job))
+        .route("/api/scheduler/jobs/:id/executions", get(get_job_executions))
         .route("/api/scheduler/jobs/:id", axum::routing::put(update_job))
         .route("/api/scheduler/jobs/:id", axum::routing::delete(delete_job))
         .route("/api/scheduler/jobs/:id/enable", axum::routing::put(toggle_job))
@@ -190,8 +196,9 @@ async fn main() {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     tracing::info!("🚀 Corn Backend listening on http://{}", addr);
     
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(&addr).await.context("Failed to bind backend listener")?;
+    axum::serve(listener, app).await.context("Backend HTTP server failed")?;
+    Ok(())
 }
 
 async fn health_check() -> impl IntoResponse {
@@ -259,17 +266,27 @@ async fn mark_notification_read(
 }
 
 // ===== 定时任务API =====
+type SchedulerResponse = Result<Json<ApiResponse<serde_json::Value>>, (axum::http::StatusCode, String)>;
 
-async fn list_jobs(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
-    let jobs = state.job_manager.lock().await.list_jobs().await;
-    
-    Json(ApiResponse {
-        success: true,
-        data: Some(jobs),
-        message: None,
-    })
+fn scheduler_error(error: anyhow::Error) -> (axum::http::StatusCode, String) {
+    use axum::http::StatusCode;
+    let message = error.to_string();
+    let status = if message == "Job not found" { StatusCode::NOT_FOUND }
+        else if message.contains("running") || message.contains("disabled") { StatusCode::CONFLICT }
+        else { StatusCode::BAD_REQUEST };
+    (status, message)
+}
+
+fn scheduler_ok(data: impl serde::Serialize) -> SchedulerResponse {
+    Ok(Json(ApiResponse { success: true,
+        data: Some(serde_json::to_value(data).map_err(|error| {
+            tracing::error!(%error, "Scheduler response serialization failed");
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "Response serialization failed".to_string())
+        })?), message: None }))
+}
+
+async fn list_jobs(State(state): State<AppState>) -> SchedulerResponse {
+    scheduler_ok(state.job_manager.lock().await.list_jobs().await.map_err(scheduler_error)?)
 }
 
 #[derive(Deserialize)]
@@ -281,137 +298,37 @@ struct CreateJobRequest {
     enabled: Option<bool>,
 }
 
-async fn create_job(
-    State(state): State<AppState>,
-    Json(req): Json<CreateJobRequest>,
-) -> impl IntoResponse {
-    let enabled = req.enabled.unwrap_or(true);
-    
-    match state.job_manager.lock().await.add_collector_job(
-        req.name,
-        req.collector_id,
-        &req.cron_expression,
-        req.description,
-    ).await {
-        Ok(job_id) => Json(ApiResponse {
-            success: true,
-            data: Some(serde_json::json!({
-                "job_id": job_id.to_string(),
-            })),
-            message: Some("Job created successfully".to_string()),
-        }),
-        Err(e) => Json(ApiResponse {
-            success: false,
-            data: None,
-            message: Some(format!("Failed to create job: {}", e)),
-        })
-    }
+async fn create_job(State(state): State<AppState>, Json(req): Json<CreateJobRequest>) -> SchedulerResponse {
+    let id = state.job_manager.lock().await.add_collector_job(
+        req.name, req.collector_id, &req.cron_expression, req.description, req.enabled.unwrap_or(true),
+    ).await.map_err(scheduler_error)?;
+    scheduler_ok(serde_json::json!({"job_id": id}))
+}
+
+async fn update_job() -> (axum::http::StatusCode, &'static str) {
+    (axum::http::StatusCode::NOT_IMPLEMENTED, "Schedule editing is not supported; disable/delete and recreate the job")
+}
+
+async fn delete_job(State(state): State<AppState>, Path(id): Path<uuid::Uuid>) -> SchedulerResponse {
+    state.job_manager.lock().await.remove_job(id).await.map_err(scheduler_error)?;
+    scheduler_ok("Job deleted")
 }
 
 #[derive(Deserialize)]
-struct UpdateJobRequest {
-    name: Option<String>,
-    cron_expression: Option<String>,
-    description: Option<String>,
+struct ToggleJobRequest { enabled: bool }
+
+async fn toggle_job(State(state): State<AppState>, Path(id): Path<uuid::Uuid>,
+                    Json(req): Json<ToggleJobRequest>) -> SchedulerResponse {
+    state.job_manager.lock().await.toggle_job(id, req.enabled).await.map_err(scheduler_error)?;
+    scheduler_ok("Job toggled")
 }
 
-async fn update_job(
-    State(state): State<AppState>,
-    Path(job_id): Path<String>,
-    Json(req): Json<UpdateJobRequest>,
-) -> impl IntoResponse {
-    // 目前tokio-cron-scheduler不支持直接更新任务
-    // 需要删除旧任务并创建新任务
-    Json(ApiResponse::<()> {
-        success: false,
-        data: None,
-        message: Some("Job update requires recreation (not yet implemented)".to_string()),
-    })
+async fn trigger_job(State(state): State<AppState>, Path(id): Path<uuid::Uuid>) -> SchedulerResponse {
+    let execution = state.job_manager.lock().await.trigger_job(id).await.map_err(scheduler_error)?;
+    scheduler_ok(serde_json::json!({"execution_id": execution, "status": "running"}))
 }
 
-async fn delete_job(
-    State(state): State<AppState>,
-    Path(job_id): Path<String>,
-) -> impl IntoResponse {
-    match uuid::Uuid::parse_str(&job_id) {
-        Ok(uuid) => {
-            match state.job_manager.lock().await.remove_job(uuid).await {
-                Ok(_) => Json(ApiResponse {
-                    success: true,
-                    data: Some("Job deleted"),
-                    message: None,
-                }),
-                Err(e) => Json(ApiResponse {
-                    success: false,
-                    data: None,
-                    message: Some(e.to_string()),
-                })
-            }
-        }
-        Err(e) => Json(ApiResponse {
-            success: false,
-            data: None,
-            message: Some(format!("Invalid job ID: {}", e)),
-        })
-    }
-}
-
-#[derive(Deserialize)]
-struct ToggleJobRequest {
-    enabled: bool,
-}
-
-async fn toggle_job(
-    State(state): State<AppState>,
-    Path(job_id): Path<String>,
-    Json(req): Json<ToggleJobRequest>,
-) -> impl IntoResponse {
-    match uuid::Uuid::parse_str(&job_id) {
-        Ok(uuid) => {
-            match state.job_manager.lock().await.toggle_job(uuid, req.enabled).await {
-                Ok(_) => Json(ApiResponse {
-                    success: true,
-                    data: Some("Job toggled"),
-                    message: None,
-                }),
-                Err(e) => Json(ApiResponse {
-                    success: false,
-                    data: None,
-                    message: Some(e.to_string()),
-                })
-            }
-        }
-        Err(e) => Json(ApiResponse {
-            success: false,
-            data: None,
-            message: Some(format!("Invalid job ID: {}", e)),
-        })
-    }
-}
-
-async fn trigger_job(
-    State(state): State<AppState>,
-    Path(job_id): Path<String>,
-) -> impl IntoResponse {
-    match uuid::Uuid::parse_str(&job_id) {
-        Ok(uuid) => {
-            match state.job_manager.lock().await.trigger_job(uuid).await {
-                Ok(_) => Json(ApiResponse {
-                    success: true,
-                    data: Some("Job triggered"),
-                    message: None,
-                }),
-                Err(e) => Json(ApiResponse {
-                    success: false,
-                    data: None,
-                    message: Some(e.to_string()),
-                })
-            }
-        }
-        Err(e) => Json(ApiResponse {
-            success: false,
-            data: None,
-            message: Some(format!("Invalid job ID: {}", e)),
-        })
-    }
+async fn get_job_executions(State(state): State<AppState>, Path(id): Path<uuid::Uuid>,
+    Query(query): Query<scheduler::job_manager::ExecutionsQuery>) -> SchedulerResponse {
+    scheduler_ok(state.job_manager.lock().await.executions(id, query).await.map_err(scheduler_error)?)
 }

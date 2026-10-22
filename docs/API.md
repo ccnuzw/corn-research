@@ -150,6 +150,54 @@ curl -X POST http://localhost:18000/api/collectors/run \
 使用 `POST /api/adapters/:id/run`，并轮询 `GET /api/adapters/:id/runs`。
 返回的 `success=true` 不代表数据已入库或数据质量验收通过。
 
+运行历史补充：两种 collector 入口也会在 `collection_runs` 写入历史，并在响应 `data` 中
+返回 `run_id`。要求采集脚本唯一对应一个已配置适配器；无对应或存在多个对应时返回 400，
+应改用明确指定适配器的运行入口。`boyar` / `sina` 分别映射到其 production 脚本。
+`records_collected` 表示抓取数量，`new_records` 表示实际新入库数量，两者不得混用。
+
+#### GET /adapters/:id/runs
+
+完整路径：`GET /api/adapters/:id/runs?limit=20&offset=0`。
+从 `collection_runs` 查询，按 `started_at DESC, id DESC` 排序；仅返回该适配器历史。
+`limit` 默认 20，范围 1–100；`offset` 默认 0。无历史的已有适配器返回空数组；
+适配器不存在返回 404；无效分页参数返回 400。
+
+```json
+{
+  "success": true,
+  "data": [{
+    "id": "example-run-id",
+    "adapter_id": "adapter_boyar_arrivals",
+    "started_at": "2026-10-22T04:00:00Z",
+    "completed_at": "2026-10-22T04:00:10Z",
+    "status": "success",
+    "records_collected": 1,
+    "new_records": 1,
+    "duplicate_records": 0,
+    "failed_records": 0,
+    "start_cursor": null,
+    "end_cursor": null,
+    "error_message": null
+  }],
+  "message": null
+}
+```
+
+状态为 `running`、`success`、`failed`；完成时写结束时间及错误原因，
+有解析/入库失败的任务不会标为 success。适配器计数与历史结束状态在同一数据库事务中更新。
+当前单后端 Compose 部署启动时，将遗留 running 历史标记为 failed（进程重启中断）；
+多实例部署前须改为带 worker 所有权/心跳的恢复逻辑。
+`GET /api/collectors/:id/history` 同样查询真实历史，不再返回固定空数组。
+
+部署前执行幂等迁移：
+```bash
+docker exec -i corn_postgres psql -v ON_ERROR_STOP=1 -U corn_user -d corn_research \
+  < migrations/006_collection_run_counts.sql
+```
+
+历史回归：`python3 backend-rust/tests/history_api.py`；创建的临时适配器及其记录自动删除，
+对已有 mock 适配器发起的同步运行历史保留。
+
 #### GET /collectors/:id/status
 
 查询采集器运行状态。
@@ -790,3 +838,80 @@ curl http://localhost:18000/api/data/660e8400-e29b-41d4-a716-446655440000/lineag
 
 **更新日期**: 2026-10-21  
 **维护者**: 玉米研究团队
+
+## Day 3: Sina corn prices (Option A)
+
+`SinaProductionCollector` now reads the real corn channel
+`https://finance.sina.com.cn/money/future/C/`, discovers dated corn/soybean-meal
+reports, and reads only their corn processor price table. It also reads Sina's
+`https://hq.sinajs.cn/list=nf_C0` quote response with a Sina Referer header.
+It does **not** provide north-port inventory/shipping and never substitutes mock data.
+
+Apply `migrations/007_sina_corn_prices.sql` before deploying the new backend.
+The existing `adapter_sina_spot` ID and `sina` / `sina_production` aliases stay valid.
+For this collector, both `POST /api/collectors/run` and
+`POST /api/adapters/adapter_sina_spot/run` persist records. Other legacy collector
+calls retain their previous fetch-only behavior; adapter runs persist normally.
+
+- Topics: `corn_spot_price`, `corn_futures_price`; both work with `/api/data/latest?topic=...`.
+- Full provenance: `GET /api/adapters/adapter_sina_spot/records?limit=100` includes
+  `indicator`, `region`, `record_key`, `metadata`, and `quality_grade=B`.
+- Spot `region` denotes the enterprise/quote location label, not a normalized province.
+  Moisture/quality labels are preserved, not normalized into a comparable national price.
+- `nf_C0` is a continuous quotation, **not a deliverable contract**. Configure
+  `SINA_FUTURES_SYMBOLS=nf_C0,nf_C2701` in the runner environment to include explicit
+  contracts; validate contract availability before configuring production.
+- Spot business dates come from report titles; futures dates/times come from the
+  response fields. Publication date and collection date are not substituted.
+- Deduplication is one **first daily snapshot** per adapter/date/topic/enterprise or symbol;
+  repeats count as duplicates, not intraday tick updates. Inserts into collection and
+  raw tables are atomic per observation, not across the entire batch.
+- `/api/data/latest` remains a legacy projection: it omits per-series metadata and
+  still hardcodes quality A. Use the adapter records endpoint for authoritative B
+  quality and provenance until the legacy projection is corrected in Day 4.
+
+## Day 3: Simplified Scheduler (Option A)
+
+Apply `migrations/008_scheduler.sql` before deploying. Jobs and execution histories
+are persisted in `scheduled_jobs` and `job_executions`; startup loads saved jobs.
+Two seeded examples remain **disabled** pending Day 4 automatic-execution validation.
+Manual triggers are deliberately allowed for disabled jobs.
+
+| Job ID | Collector | Beijing Time | UTC Cron |
+| --- | --- | --- | --- |
+| `89000000-0000-4000-8000-000000000001` | `boyar_production` | 08:00 | `0 0 0 * * *` |
+| `89000000-0000-4000-8000-000000000002` | `sina_production` | 09:00 | `0 0 1 * * *` |
+
+All cron expressions use UTC and include seconds (six fields). API job objects
+include `timezone: "UTC"`. Do not enter Beijing hour values as UTC hour values.
+
+- `GET /api/scheduler/jobs`: durable configuration, state, counters and next run.
+- `POST /api/scheduler/jobs`: name, collector_id, cron_expression, description?, enabled?.
+- `POST /api/scheduler/jobs/:id`: real asynchronous manual collection, returns
+  `{execution_id, status: "running"}`; overlapping execution of the same job is rejected.
+- `GET /api/scheduler/jobs/:id/executions`: default limit20; limit1..100, offset>=0;
+  optional `status=running|success|failed`, `start_date` and `end_date` (RFC3339 timestamps).
+  Results sort by started_at DESC,id DESC and expose the underlying collection_run_id.
+- `PUT /api/scheduler/jobs/:id/enable`: `{enabled: bool}`. Enabling automatic runs
+  is intentionally deferred until Day 4 verification.
+- `DELETE /api/scheduler/jobs/:id`: rejects running jobs; deletes job/history by cascade.
+- General PUT editing remains unsupported (HTTP501); disable/delete and recreate instead.
+
+This is a single-backend Compose deployment. Restart recovery marks interrupted
+runs failed; missed schedules are not replayed. Automatic timing, catch-up behavior,
+notification-failure handling and multi-instance lifecycle need Day 4 validation.
+
+Manual-trigger quick reference:
+
+```sh
+# Sina example; substitute ...0001 for the Boyar example.
+curl -fsS -X POST http://localhost:18000/api/scheduler/jobs/89000000-0000-4000-8000-000000000002
+curl -fsS 'http://localhost:18000/api/scheduler/jobs/89000000-0000-4000-8000-000000000002/executions?limit=20&offset=0'
+```
+
+POST acceptance is not collection success: match its returned execution_id to a
+history row and wait for success/failed. Failed executions contain error_message
+and completed_at; the job exposes last_error and failed_count. An isolated real
+runner failure and independent PostgreSQL persistence check passed via
+`python3 backend-rust/tests/scheduler_failure.py`. This test cleans up its own
+job/adapter and saves evidence under docs/reports; it does not alter either example.

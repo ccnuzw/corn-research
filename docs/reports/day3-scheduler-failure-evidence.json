@@ -1,0 +1,57 @@
+{
+  "test": "controlled unknown-collector failure, not a production outage",
+  "execution_api": {
+    "collection_run_id": "820ada97-f34d-4c7c-a9c3-9dfaf96e1710",
+    "completed_at": "2026-10-22T04:26:46.763729Z",
+    "error_message": "Unknown collector: __scheduler_failure_probe_471196f8ca78. Available: ['mock', 'boyar', 'boyar_production', 'sina', 'sina_production', 'dce', 'cft']",
+    "id": "66744532-8cba-48a5-8e9d-69d38ec3b481",
+    "job_id": "d33a8081-7181-4234-8171-3166bb52440e",
+    "records_collected": 0,
+    "started_at": "2026-10-22T04:26:46.725505Z",
+    "status": "failed",
+    "trigger_type": "manual"
+  },
+  "job_api": {
+    "collector_id": "__scheduler_failure_probe_471196f8ca78",
+    "created_at": "2026-10-22T04:26:46.722004Z",
+    "cron_expression": "0 0 0 1 1 *",
+    "description": null,
+    "enabled": false,
+    "failed_count": 1,
+    "id": "d33a8081-7181-4234-8171-3166bb52440e",
+    "last_error": "Unknown collector: __scheduler_failure_probe_471196f8ca78. Available: ['mock', 'boyar', 'boyar_production', 'sina', 'sina_production', 'dce', 'cft']",
+    "last_run": "2026-10-22T04:26:46.725505Z",
+    "name": "Isolated scheduler failure probe",
+    "next_run": null,
+    "status": "failed",
+    "success_count": 0,
+    "timezone": "UTC",
+    "total_runs": 1
+  },
+  "collection_run_api": {
+    "id": "820ada97-f34d-4c7c-a9c3-9dfaf96e1710",
+    "adapter_id": "test_scheduler_failure_471196f8ca78",
+    "started_at": "2026-10-22T04:26:46.728886Z",
+    "completed_at": "2026-10-22T04:26:46.759026Z",
+    "status": "failed",
+    "new_records": 0,
+    "duplicate_records": 0,
+    "failed_records": 0,
+    "start_cursor": null,
+    "end_cursor": null,
+    "error_message": "Unknown collector: __scheduler_failure_probe_471196f8ca78. Available: ['mock', 'boyar', 'boyar_production', 'sina', 'sina_production', 'dce', 'cft']",
+    "records_collected": 0
+  },
+  "postgresql_row": {
+    "id": "66744532-8cba-48a5-8e9d-69d38ec3b481",
+    "job_id": "d33a8081-7181-4234-8171-3166bb52440e",
+    "trigger_type": "manual",
+    "status": "failed",
+    "started_at": "2026-10-22T04:26:46.725505+00:00",
+    "completed_at": "2026-10-22T04:26:46.763729+00:00",
+    "records_collected": 0,
+    "collection_run_id": "820ada97-f34d-4c7c-a9c3-9dfaf96e1710",
+    "error_message": "Unknown collector: __scheduler_failure_probe_471196f8ca78. Available: ['mock', 'boyar', 'boyar_production', 'sina', 'sina_production', 'dce', 'cft']"
+  },
+  "cleanup": "isolated job/adapter removed after evidence capture; production jobs unchanged"
+}

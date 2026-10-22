@@ -49,7 +49,9 @@ COPY collectors-python /app/collectors-python
 RUN pip3 install --no-cache-dir --break-system-packages \
     requests \
     beautifulsoup4 \
-    lxml
+    lxml \
+    'redis>=5.0,<6' \
+    'tenacity>=8.2,<10'
 
 # 创建数据目录
 RUN mkdir -p /app/data

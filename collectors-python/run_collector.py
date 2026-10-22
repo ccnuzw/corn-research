@@ -6,6 +6,7 @@
 import sys
 import json
 import argparse
+import logging
 from contextlib import redirect_stdout
 from datetime import datetime
 from typing import List, Dict, Any
@@ -110,6 +111,8 @@ def list_collectors() -> List[str]:
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, stream=sys.stderr,
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(description='Run data collector')
     parser.add_argument('--collector', type=str, help='Collector ID to run')
     parser.add_argument('--max-items', type=int, default=100, help='Maximum items to collect')

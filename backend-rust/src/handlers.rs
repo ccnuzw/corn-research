@@ -106,14 +106,23 @@ async fn execute_collector(
         "info"
     ).await;
     
-    // 调用Python采集器
-    let result = python_bridge::run_python_collector(&collector_id, Some(max_items)).await
-        .map_err(|e| CornError::Python(e))?;
+    let adapter = crate::collection_execution::resolve_adapter(&state.db, &collector_id).await
+        .map_err(CornError::Validation)?;
+    let history = crate::collection_execution::start_run(&state.db, &adapter.id).await
+        .map_err(|e| CornError::Internal(e.to_string()))?;
+    let run_id = history.id.clone();
+    let db = state.db.clone();
+    let persist = adapter.script_file == "sina_production";
+    // Keep finalization alive if the HTTP client disconnects mid-collection.
+    let count = tokio::spawn(crate::collection_execution::execute_run(
+        db, adapter, history, max_items, persist,
+    )).await.map_err(|e| CornError::Internal(e.to_string()))?
+        .map_err(CornError::Python)?;
     
     // 发送采集完成通知
     let _ = state.notification_service.notify(
         "采集完成",
-        &format!("采集器 {} 完成，采集 {} 条记录", collector_id, result.len()),
+        &format!("采集器 {} 完成，采集 {} 条记录", collector_id, count),
         "success"
     ).await;
     
@@ -121,9 +130,10 @@ async fn execute_collector(
         success: true,
         data: Some(serde_json::json!({
             "collector_id": collector_id,
-            "records_collected": result.len(),
+            "records_collected": count,
+            "run_id": run_id,
         })),
-        message: Some(format!("Collected {} records", result.len())),
+        message: Some(format!("Collected {} records", count)),
     }))
 }
 
@@ -135,18 +145,34 @@ pub struct HistoryQuery {
 
 pub async fn get_collector_history(
     Path(collector_id): Path<String>,
+    State(state): State<AppState>,
     Query(query): Query<HistoryQuery>,
-) -> impl IntoResponse {
-    let _limit = query.limit.unwrap_or(50);
+) -> Result<impl IntoResponse, CornError> {
+    use crate::db::collection_entities::run;
+    let limit = query.limit.unwrap_or(50);
+    if !(1..=100).contains(&limit) {
+        return Err(CornError::Validation("limit must be between 1 and 100".into()));
+    }
+    let adapter = crate::collection_execution::resolve_adapter(&state.db, &collector_id).await
+        .map_err(CornError::Validation)?;
+    let runs = run::Entity::find().filter(run::Column::AdapterId.eq(adapter.id))
+        .order_by_desc(run::Column::StartedAt).order_by_desc(run::Column::Id)
+        .limit(limit as u64).all(&state.db).await
+        .map_err(|e| CornError::Internal(e.to_string()))?;
+    let history: Vec<CollectionHistory> = runs.into_iter().map(|r| CollectionHistory {
+        id: r.id, collector_id: collector_id.clone(),
+        started_at: r.started_at.with_timezone(&Utc),
+        completed_at: r.completed_at.map(|t| t.with_timezone(&Utc)),
+        status: r.status.unwrap_or_else(|| "unknown".into()),
+        records_collected: r.records_collected.max(0) as u32,
+        error_message: r.error_message,
+    }).collect();
     
-    // TODO: 从数据库查询历史记录
-    let history: Vec<CollectionHistory> = vec![];
-    
-    Json(ApiResponse {
+    Ok(Json(ApiResponse {
         success: true,
         data: Some(history),
         message: None,
-    })
+    }))
 }
 
 /// 获取采集器状态
@@ -185,6 +211,7 @@ fn topic_indicators(topic: &str) -> Vec<&str> {
     match topic {
         "shandong_arrivals" | "corn_arrivals" => vec!["山东到车量", "山东深加工到车量"],
         "corn_spot_price" => vec!["玉米现货价格"],
+        "corn_futures_price" => vec!["玉米期货价格"],
         "north_port_inventory" => vec!["北方四港库存"],
         "north_port_shipping" => vec!["北方四港下海量"],
         _ => vec![topic],
@@ -192,7 +219,8 @@ fn topic_indicators(topic: &str) -> Vec<&str> {
 }
 
 fn latest_records_query(query: &LatestDataQuery, end_date: NaiveDate) -> sea_orm::Select<RawRecords> {
-    let start_date = end_date - Duration::days(query.days.unwrap_or(30) as i64);
+    let start_date = end_date.checked_sub_signed(Duration::days(query.days.unwrap_or(30) as i64))
+        .unwrap_or(NaiveDate::MIN);
     let mut records = RawRecords::find()
         .filter(RawColumn::BusinessDate.gte(start_date))
         .filter(RawColumn::BusinessDate.lte(end_date))
@@ -214,6 +242,9 @@ pub async fn get_latest_data(
     Query(query): Query<LatestDataQuery>,
 ) -> Result<impl IntoResponse, CornError> {
     let days = query.days.unwrap_or(30);
+    if !(1..=36500).contains(&days) || !(1..=10000).contains(&query.limit.unwrap_or(100)) {
+        return Err(CornError::Validation("days must be 1..36500 and limit must be 1..10000".into()));
+    }
     let limit = query.limit.unwrap_or(100);
     
     tracing::info!("📊 Fetching latest data: days={}, limit={}", days, limit);
@@ -225,16 +256,17 @@ pub async fn get_latest_data(
         .map_err(|e| CornError::Internal(format!("Database query failed: {}", e)))?;
     
     // 转换为API模型
-    let data: Vec<MarketData> = records.into_iter().map(|r| MarketData {
+    let data: Vec<MarketData> = records.into_iter().map(|r| -> Result<MarketData, CornError> { Ok(MarketData {
         id: r.id.to_string(),
         business_date: r.business_date,
         indicator_name: r.indicator_name,
-        value: r.value.to_string().parse().unwrap_or(0.0),
+        value: r.value.to_string().parse::<f64>()
+            .map_err(|e| CornError::Internal(format!("Invalid stored numeric value: {}", e)))?,
         unit: r.unit,
         source: r.collector_id,
         quality: "A".to_string(), // TODO: 计算质量等级
         collected_at: r.collected_at.with_timezone(&Utc),
-    }).collect();
+    }) }).collect::<Result<_, _>>()?;
     
     tracing::info!("✅ Found {} records", data.len());
     
@@ -264,13 +296,10 @@ pub async fn get_stats(
         .map_err(|e| CornError::Internal(format!("Query failed: {}", e)))?;
     
     let mut indicators = std::collections::HashSet::new();
-    let mut latest_collection = None;
+    let latest_collection = all_records.iter().map(|record| record.collected_at).max();
     
     for record in &all_records {
         indicators.insert(&record.indicator_name);
-        if latest_collection.is_none() || record.collected_at > *latest_collection.as_ref().unwrap() {
-            latest_collection = Some(record.collected_at);
-        }
     }
     
     let stats = DataStats {
@@ -304,7 +333,11 @@ pub async fn get_trend_data(
     
     // 计算日期范围
     let end_date = Utc::now().naive_utc().date();
-    let start_date = end_date - Duration::days(days as i64);
+    if !(1..=36500).contains(&days) {
+        return Err(CornError::Validation("days must be 1..36500".into()));
+    }
+    let start_date = end_date.checked_sub_signed(Duration::days(days as i64))
+        .ok_or_else(|| CornError::Validation("Date range exceeds supported dates".into()))?;
     
     // 从数据库查询指定指标的数据
     let records = RawRecords::find()
@@ -317,16 +350,17 @@ pub async fn get_trend_data(
         .map_err(|e| CornError::Internal(format!("Database query failed: {}", e)))?;
     
     // 转换为API模型
-    let data: Vec<MarketData> = records.into_iter().map(|r| MarketData {
+    let data: Vec<MarketData> = records.into_iter().map(|r| -> Result<MarketData, CornError> { Ok(MarketData {
         id: r.id.to_string(),
         business_date: r.business_date,
         indicator_name: r.indicator_name,
-        value: r.value.to_string().parse().unwrap_or(0.0),
+        value: r.value.to_string().parse::<f64>()
+            .map_err(|e| CornError::Internal(format!("Invalid stored numeric value: {}", e)))?,
         unit: r.unit,
         source: r.collector_id,
         quality: "A".to_string(),
         collected_at: r.collected_at.with_timezone(&Utc),
-    }).collect();
+    }) }).collect::<Result<_, _>>()?;
     
     tracing::info!("✅ Found {} trend records", data.len());
     

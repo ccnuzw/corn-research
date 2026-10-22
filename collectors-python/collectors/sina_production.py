@@ -1,319 +1,260 @@
-"""
-新浪财经采集器 - 生产版本
-采集北方四港库存和下海量数据
-
-策略：
-1. 使用东方财富网作为备用数据源
-2. 支持多个数据源切换
-3. 限速和重试机制
-"""
+"""Real Sina corn prices; source errors must never become synthetic observations."""
+import logging
+import math
+import os
+import random
 import re
-import urllib.request
-import urllib.error
 import time
-from datetime import datetime
-from typing import List, Optional
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+from typing import List
+from urllib.parse import urljoin, urlparse
 
+from bs4 import BeautifulSoup
+from tenacity import Retrying, retry_if_exception, stop_after_attempt, wait_exponential
+
+from config import BoyarConfig
 from .base import BaseCollector, RawDataRecord
+
+logger = logging.getLogger(__name__)
+
+
+class SinaSourceError(RuntimeError):
+    pass
 
 
 class SinaProductionCollector(BaseCollector):
-    """新浪财经采集器 - 生产版本（支持多数据源）"""
-    
-    @property
-    def collector_id(self) -> str:
-        return "sina_north_port_production"
-    
-    @property
-    def site_name(self) -> str:
-        return "新浪财经/东方财富"
-    
-    @property
-    def site_url(self) -> str:
-        return "https://finance.sina.com.cn"
-    
-    @property
-    def source_type(self) -> str:
-        return "public_media"
-    
-    def __init__(self):
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-        }
-        
-        # 限速配置
-        self.request_interval = 2.0
+    collector_id = "sina_corn_production"
+    site_name = "新浪财经"
+    site_url = "https://finance.sina.com.cn/money/future/C/"
+    source_name = site_name
+    source_url = site_url
+    source_type = "public_media"
+
+    def __init__(self, *, opener=None, sleep=None, uniform=None, symbols=None):
+        self._opener = opener or urllib.request.urlopen
+        self._sleep = sleep or time.sleep
+        self._uniform = uniform or random.uniform
+        self.symbols = tuple(symbols if symbols is not None else
+                             os.getenv("SINA_FUTURES_SYMBOLS", "nf_C0").split(","))
+        if not self.symbols or any(not re.fullmatch(r"nf_C(?:0|\d{4})", s) for s in self.symbols):
+            raise ValueError("SINA_FUTURES_SYMBOLS must contain corn symbols, e.g. nf_C0,nf_C2701")
         self.request_timeout = 30
         self.max_retries = 3
-        self.last_request_time = 0
-    
-    def collect(self, **kwargs) -> List[RawDataRecord]:
-        """
-        采集北方四港数据
-        
-        策略：尝试多个数据源
-        """
-        print(f"[{self.collector_id}] 开始采集北方四港数据（生产模式）...")
-        
-        records = []
-        
-        # 策略1: 尝试东方财富网（更稳定的数据源）
-        print(f"[{self.collector_id}] 尝试东方财富网...")
-        records = self._collect_from_eastmoney()
-        
-        if records:
-            print(f"[{self.collector_id}] ✓ 东方财富网采集成功")
-            return records
-        
-        # 策略2: 尝试Mysteel直接数据（如果可用）
-        print(f"[{self.collector_id}] 尝试Mysteel数据...")
-        records = self._collect_from_mysteel()
-        
-        if records:
-            print(f"[{self.collector_id}] ✓ Mysteel采集成功")
-            return records
-        
-        # 策略3: 使用Mock数据作为兜底
-        print(f"[{self.collector_id}] ⚠ 所有数据源失败，使用Mock数据")
-        records = self._generate_mock_data()
-        
-        return records
-    
-    def _collect_from_eastmoney(self) -> List[RawDataRecord]:
-        """从东方财富网采集数据"""
-        records = []
-        
-        # 东方财富期货频道的玉米相关文章
-        # 注意：这些URL需要定期更新
-        test_urls = [
-            "https://futures.eastmoney.com/a/202610211234567890.html",
-            "https://futures.eastmoney.com/a/202610141234567890.html",
-        ]
-        
-        for url in test_urls:
-            self._rate_limit()
-            
-            article_data = self._fetch_article(url)
-            
-            if article_data:
-                print(f"[{self.collector_id}] ✓ 找到有效文章: {url}")
-                
-                # 提取库存数据
-                inventory_records = self._extract_inventory(article_data)
-                records.extend(inventory_records)
-                
-                # 提取下海量数据
-                shipping_records = self._extract_shipping(article_data)
-                records.extend(shipping_records)
-                
-                if records:
-                    break
-        
-        return records
-    
-    def _collect_from_mysteel(self) -> List[RawDataRecord]:
-        """从Mysteel采集数据（如果可用）"""
-        # Mysteel需要付费订阅，这里暂时返回空
-        # TODO: 集成Mysteel API（如果获得授权）
-        return []
-    
-    def _generate_mock_data(self) -> List[RawDataRecord]:
-        """
-        生成Mock数据作为兜底
-        使用合理的历史数据范围
-        """
-        import random
-        
-        today = datetime.now().strftime('%Y-%m-%d')
-        
-        records = [
-            RawDataRecord(
-                business_date=today,
-                collected_at=datetime.now(),
-                published_at=None,
-                data_type="inventory",
-                indicator="北方四港库存",
-                value=round(random.uniform(180, 220), 1),  # 180-220万吨
-                unit="万吨",
-                region="北方四港",
-                source_url="https://mock.data/north_port",
-                original_text="[Mock数据] 北方四港库存数据",
-                metadata={
-                    "collector_id": self.collector_id,
-                    "is_mock": True,
-                    "mock_reason": "数据源暂时不可用"
-                }
-            ),
-            RawDataRecord(
-                business_date=today,
-                collected_at=datetime.now(),
-                published_at=None,
-                data_type="shipping",
-                indicator="北方四港下海量",
-                value=round(random.uniform(30, 50), 1),  # 30-50万吨
-                unit="万吨",
-                region="北方四港",
-                source_url="https://mock.data/north_port",
-                original_text="[Mock数据] 北方四港周度下海量",
-                metadata={
-                    "collector_id": self.collector_id,
-                    "is_mock": True,
-                    "mock_reason": "数据源暂时不可用"
-                }
-            )
-        ]
-        
-        print(f"[{self.collector_id}] ⚠ 使用Mock数据: {len(records)} 条")
-        return records
-    
-    def _fetch_article(self, url: str) -> Optional[dict]:
-        """抓取文章内容"""
-        try:
-            req = urllib.request.Request(url, headers=self.headers)
-            with urllib.request.urlopen(req, timeout=self.request_timeout) as resp:
-                html = resp.read().decode('utf-8', 'ignore')
-            
-            # 提取标题
-            title_match = re.search(r'<title>(.*?)</title>', html, re.IGNORECASE)
-            title = title_match.group(1).strip() if title_match else ''
-            
-            # 提取日期
-            date_match = re.search(r'(\d{4})[年-](\d{1,2})[月-](\d{1,2})日?', html)
-            if date_match:
-                year, month, day = date_match.groups()
-                date_str = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
-            else:
-                date_str = datetime.now().strftime('%Y-%m-%d')
-            
-            # 提取正文
-            content_match = re.search(r'<article[^>]*>(.*?)</article>', html, re.DOTALL | re.IGNORECASE)
-            if not content_match:
-                content_match = re.search(r'<div[^>]*class="[^"]*article[^"]*"[^>]*>(.*?)</div>', html, re.DOTALL)
-            
-            content = content_match.group(1) if content_match else html
-            
-            # 去除HTML标签
-            content = re.sub(r'<[^>]+>', ' ', content)
-            content = re.sub(r'\s+', ' ', content).strip()
-            
-            if not content or len(content) < 100:
-                return None
-            
-            return {
-                'url': url,
-                'title': title,
-                'content': content,
-                'date': date_str
-            }
-        
-        except:
-            return None
-    
-    def _extract_inventory(self, article: dict) -> List[RawDataRecord]:
-        """提取库存数据"""
-        records = []
-        content = article['content']
-        
-        patterns = [
-            r'北[方向]四港.*?库存[：:]?\s*(\d+\.?\d*)\s*万吨',
-            r'四港库存[：:]?\s*(\d+\.?\d*)\s*万吨',
-            r'港口库存[：:]?\s*(\d+\.?\d*)\s*万吨',
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, content)
-            if match:
-                value = float(match.group(1))
-                
-                record = RawDataRecord(
-                    business_date=article['date'],
-                    collected_at=datetime.now(),
-                    published_at=None,
-                    data_type="inventory",
-                    indicator="北方四港库存",
-                    value=value,
-                    unit="万吨",
-                    region="北方四港",
-                    source_url=article['url'],
-                    original_text=match.group(0),
-                    metadata={
-                        "title": article['title'],
-                        "collector_id": self.collector_id,
-                        "extraction_pattern": pattern
-                    }
-                )
-                records.append(record)
-                break
-        
-        return records
-    
-    def _extract_shipping(self, article: dict) -> List[RawDataRecord]:
-        """提取下海量数据"""
-        records = []
-        content = article['content']
-        
-        patterns = [
-            r'下海量[：:]?\s*(\d+\.?\d*)\s*万吨',
-            r'周[度期]?下海[：:]?\s*(\d+\.?\d*)\s*万吨',
-            r'本周.*?下海.*?(\d+\.?\d*)\s*万吨',
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, content)
-            if match:
-                value = float(match.group(1))
-                
-                record = RawDataRecord(
-                    business_date=article['date'],
-                    collected_at=datetime.now(),
-                    published_at=None,
-                    data_type="shipping",
-                    indicator="北方四港下海量",
-                    value=value,
-                    unit="万吨",
-                    region="北方四港",
-                    source_url=article['url'],
-                    original_text=match.group(0),
-                    metadata={
-                        "title": article['title'],
-                        "collector_id": self.collector_id,
-                        "extraction_pattern": pattern
-                    }
-                )
-                records.append(record)
-                break
-        
-        return records
-    
-    def _rate_limit(self):
-        """限速控制"""
-        now = time.time()
-        elapsed = now - self.last_request_time
-        
-        if elapsed < self.request_interval:
-            sleep_time = self.request_interval - elapsed
-            time.sleep(sleep_time)
-        
-        self.last_request_time = time.time()
+        # Sina redirects mobile UAs to a CBOT SPA with no domestic corn news/table.
+        self.user_agents = tuple(ua for ua in BoyarConfig.user_agents
+                                 if not any(m in ua for m in ("Mobile", "iPhone", "Android")))
+        if not self.user_agents:
+            raise ValueError("Sina requires at least one desktop User-Agent")
+        self._ua_index = random.randrange(len(self.user_agents))
 
+    @staticmethod
+    def _retryable(exc):
+        if isinstance(exc, urllib.error.HTTPError):
+            return exc.code in (408, 429) or 500 <= exc.code < 600
+        return isinstance(exc, (urllib.error.URLError, TimeoutError, ConnectionError))
 
-# 测试代码
-if __name__ == "__main__":
-    collector = SinaProductionCollector()
-    
-    print("\n" + "="*60)
-    print("新浪财经采集器 - 生产版本测试")
-    print("="*60 + "\n")
-    
-    records = collector.collect()
-    
-    if records:
-        print(f"\n✓ 采集到 {len(records)} 条记录\n")
-        print("详细数据:")
-        print("-"*60)
-        for i, r in enumerate(records):
-            is_mock = r.metadata.get('is_mock', False)
-            mock_flag = " [Mock]" if is_mock else ""
-            print(f"  {i+1}. {r.business_date} | {r.indicator}: {r.value} {r.unit}{mock_flag}")
-    else:
-        print("\n⚠ 未找到数据")
+    def _request(self, url):
+        for attempt in Retrying(
+            stop=stop_after_attempt(self.max_retries + 1),
+            wait=wait_exponential(multiplier=1, min=1, max=4),
+            retry=retry_if_exception(self._retryable), sleep=self._sleep, reraise=True,
+        ):
+            with attempt:
+                self._sleep(self._uniform(1, 3))
+                ua = self.user_agents[self._ua_index % len(self.user_agents)]
+                self._ua_index += 1
+                request = urllib.request.Request(url, headers={
+                    "User-Agent": ua, "Referer": self.site_url,
+                })
+                try:
+                    with self._opener(request, timeout=self.request_timeout) as response:
+                        raw = response.read()
+                        final_url = getattr(response, "geturl", lambda: url)()
+                    logger.info("page_fetched url=%s final_url=%s bytes=%d attempt=%d",
+                                url, final_url, len(raw), attempt.retry_state.attempt_number)
+                    # Sina's channel and quote endpoint use GBK; articles use UTF-8.
+                    try:
+                        return raw.decode("utf-8-sig")
+                    except UnicodeDecodeError:
+                        return raw.decode("gb18030")
+                except Exception as exc:
+                    logger.warning("request_failed url=%s attempt=%s reason=%s", url,
+                                   attempt.retry_state.attempt_number, exc)
+                    raise
+
+    def _fetch_page(self):
+        return self._request(self.site_url)
+
+    @staticmethod
+    def _parse_date(text):
+        match = re.fullmatch(r"\s*(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})日?\s*", text)
+        if not match:
+            raise ValueError("Missing or ambiguous business date: " + text)
+        return datetime(*map(int, match.groups())).date().isoformat()
+
+    @staticmethod
+    def _parse_number(text):
+        text = re.sub(r"\s+", "", text).replace("，", ",")
+        match = re.fullmatch(r"([+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)(?:元/吨|元／吨)?", text)
+        if not match:
+            raise ValueError("Invalid price: " + text)
+        value = float(match[1].replace(",", ""))
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError("Price must be finite and positive")
+        return value
+
+    def _record(self, date, value, region, url, text, metadata, published_at=None):
+        future = metadata["topic_name"] == "corn_futures_price"
+        return RawDataRecord(
+            business_date=date, collected_at=datetime.now(timezone.utc),
+            published_at=published_at, data_type="futures_price" if future else "spot_price",
+            indicator="玉米期货价格" if future else "玉米现货价格", value=value,
+            unit="元/吨", region=region, source_url=url, original_text=text,
+            metadata={"collector_id": self.collector_id, "quality_grade": "B",
+                      "is_mock": False, **metadata},
+        )
+
+    def _parse_spot(self, html, url):
+        soup = BeautifulSoup(html, "lxml")
+        title = soup.select_one("h1.main-title, h1")
+        og_title = soup.select_one('meta[property="og:title"]')
+        title_text = (title.get_text(" ", strip=True) if title else
+                      og_title.get("content", "") if og_title else
+                      soup.title.get_text(" ", strip=True) if soup.title else "")
+        # Use the report's explicit observation date, never today's date or an unrelated page date.
+        match = re.search(r"\d{4}[年/-]\d{1,2}[月/-]\d{1,2}日?", title_text)
+        if "玉米" not in title_text or not match:
+            logger.warning("spot_rejected url=%s reason=missing_report_date_or_corn_title title=%r",
+                           url, title_text[:160])
+            return []
+        date = self._parse_date(match[0])
+        publication = soup.select_one('meta[property="article:published_time"]')
+        published = None
+        if publication and publication.get("content"):
+            try:
+                published = datetime.fromisoformat(publication["content"])
+            except ValueError:
+                logger.warning("invalid_publication_timestamp url=%s value=%r", url, publication["content"])
+        body = next((soup.select_one(selector) for selector in (
+            "#artibody", "article", "#article", "#article_content", ".article-content", ".article"
+        ) if soup.select_one(selector) is not None), None)
+        if body is None:
+            logger.warning("spot_rejected url=%s reason=missing_article_body title=%r", url, title_text[:160])
+            return []
+        records = {}
+        for table in body.find_all("table"):
+            rows = table.find_all("tr")
+            # Only the unambiguous corn processor table, not the following soybean meal table.
+            def normalized(text):
+                return re.sub(r"\s+", "", text).replace("／", "/")
+
+            header = next((i for i, r in enumerate(rows)
+                           if any(label in normalized(r.get_text()) for label in
+                                  ("深加工企业", "深加工厂家", "玉米加工企业"))
+                           and "元/吨" in normalized(r.get_text())), None)
+            if header is None:
+                continue
+            for row in rows[header + 1:]:
+                cols = row.find_all(["td", "th"], recursive=False)
+                if not cols:
+                    continue
+                if len(cols) != 2:
+                    raise SinaSourceError("Corn spot table schema changed: expected two columns")
+                enterprise, price = (c.get_text("", strip=True) for c in cols)
+                if not enterprise:
+                    raise SinaSourceError("Corn spot row has no enterprise")
+                try:
+                    value = self._parse_number(price)
+                except ValueError as exc:
+                    raise SinaSourceError(f"Invalid corn price for {enterprise}: {price}") from exc
+                if enterprise in records:
+                    raise SinaSourceError("Duplicate enterprise in report: " + enterprise)
+                records[enterprise] = self._record(date, value, enterprise, url,
+                    row.get_text(" | ", strip=True), {
+                        "topic_name": "corn_spot_price", "enterprise": enterprise,
+                        "record_key": enterprise, "title": title_text,
+                        "price_basis": "report_quote; moisture/quality as stated in enterprise label",
+                    }, published)
+        logger.log(logging.INFO if records else logging.WARNING,
+                   "spot_parsed url=%s title=%r tables=%d records=%d reason=%s",
+                   url, title_text[:160], len(body.find_all("table")), len(records),
+                   "ok" if records else "no_matching_corn_header")
+        return list(records.values())
+
+    def _discover_articles(self, html):
+        page = BeautifulSoup(html, "lxml")
+        candidates = []
+        for a in page.find_all("a", href=True):
+            title = a.get_text(strip=True) + " " + a.get("title", "")
+            url = urljoin(self.site_url, a["href"])
+            if url.startswith("http://"):
+                url = "https://" + url[len("http://"):]
+            parsed = urlparse(url)
+            if (parsed.hostname == "finance.sina.com.cn" and "/money/future/" in parsed.path
+                    and parsed.path.endswith(".shtml") and "玉米" in title
+                    and re.search(r"/\d{4}-\d{2}-\d{2}/", parsed.path)
+                    and any(word in title for word in ("市场信息", "行业资讯", "现货", "价格", "日报"))
+                    and url not in candidates):
+                candidates.append(url)
+        candidates.sort(key=lambda url: (
+            re.search(r"/\d{4}-\d{2}-\d{2}/", url)[0],
+            any(word in url for word in ("/wemedia/", "/agri/")),
+        ), reverse=True)
+        logger.info("index_parsed title=%r bytes=%d candidates=%d",
+                    page.title.get_text(strip=True) if page.title else "", len(html.encode("utf-8")),
+                    len(candidates))
+        return candidates
+
+    def _parse_futures(self, text, url):
+        records = []
+        for symbol in self.symbols:
+            match = re.search(r'var\s+hq_str_' + re.escape(symbol) + r'="([^"\r\n]*)";', text)
+            fields = match[1].split(",") if match else []
+            if len(fields) < 18 or fields[16] != "玉米":
+                raise SinaSourceError("Missing/invalid Sina corn quote: " + symbol)
+            date = self._parse_date(fields[17])
+            if not re.fullmatch(r"\d{6}", fields[1]):
+                raise SinaSourceError("Invalid quote time: " + fields[1])
+            quote_at = datetime.fromisoformat(date + "T" + ":".join(
+                fields[1][i:i+2] for i in (0, 2, 4)) + "+08:00")
+            records.append(self._record(date, self._parse_number(fields[8]), "大连商品交易所",
+                url, match[0], {
+                    "topic_name": "corn_futures_price", "record_key": symbol,
+                    "symbol": symbol, "contract_name": fields[0],
+                    "continuous": symbol == "nf_C0", "quote_at": quote_at.isoformat(),
+                    "price_field": "latest (index 8)", "open": fields[2],
+                    "high": fields[3], "low": fields[4], "previous_settlement": fields[10],
+                }))
+        return records
+
+    def collect(self, max_items: int = 100, **kwargs) -> List[RawDataRecord]:
+        if isinstance(max_items, bool) or not isinstance(max_items, int) or max_items < 1:
+            raise ValueError("max_items must be a positive integer")
+        candidates = self._discover_articles(self._fetch_page())
+        if not candidates:
+            logger.warning("no_candidates primary_url=%s trying_sina_futures_index", self.site_url)
+            candidates = self._discover_articles(self._request("https://finance.sina.com.cn/futuremarket/"))
+        spot = []
+        failures = []
+        for url in candidates[:5]:
+            try:
+                spot = self._parse_spot(self._request(url), url)
+            except (SinaSourceError, ValueError, urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+                logger.warning("candidate_failed url=%s reason=%s", url, exc, exc_info=True)
+                failures.append(f"{url}: {type(exc).__name__}: {exc}")
+                continue
+            if spot:
+                break
+            failures.append(f"{url}: no dated corn processor table")
+        if not spot:
+            detail = "; ".join(failures) or "no eligible Sina article links (possible redirect or schema change)"
+            raise SinaSourceError(f"No dated corn processor price table found; candidates={len(candidates)}; "
+                                  f"attempted={min(len(candidates), 5)}; {detail}; no mock fallback")
+        quote_url = "https://hq.sinajs.cn/list=" + ",".join(self.symbols)
+        futures = self._parse_futures(self._request(quote_url), quote_url)
+        # Reserve space for the futures quote; max_items always caps the full batch.
+        records = (futures + spot)[:max_items]
+        logger.info("collection_complete spot=%d futures=%d returned=%d", len(spot), len(futures), len(records))
+        return records

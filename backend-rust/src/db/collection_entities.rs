@@ -104,6 +104,10 @@ pub mod record {
         pub value: Option<Decimal>,
         pub unit: Option<String>,
         pub topic_name: Option<String>,
+        pub record_key: String,
+        pub indicator: Option<String>,
+        pub region: Option<String>,
+        pub metadata: Option<Json>,
         pub source_url: Option<String>,
         pub source_html_path: Option<String>,
         pub quality_grade: Option<String>,
@@ -150,6 +154,7 @@ pub mod run {
         pub start_cursor: Option<String>,
         pub end_cursor: Option<String>,
         pub error_message: Option<String>,
+        pub records_collected: i32,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

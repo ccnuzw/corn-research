@@ -17,6 +17,7 @@ export default function CollectorsPage() {
   const [selected, setSelected] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [runningAdapters, setRunningAdapters] = useState<Set<string>>(new Set())
   const confirm = useConfirm()
 
   const loadAdapters = async () => {
@@ -54,17 +55,55 @@ export default function CollectorsPage() {
     )
   }
 
-  const handleRun = async (id: string) => {
+  const handleRun = async (id: string, name: string) => {
+    // 防止重复点击
+    if (runningAdapters.has(id)) {
+      toast.info('采集器正在运行中，请稍候...')
+      return
+    }
+
     try {
+      setRunningAdapters(prev => new Set(prev).add(id))
+      toast.loading(`开始采集: ${name}`, { id: `run-${id}` })
+      
       const response = await api.runAdapter(id)
-      if (response.success) {
-        toast.success(`采集已启动: ${response.data?.message}`)
-        loadAdapters()
+      
+      if (response.success && response.data) {
+        toast.success(
+          `采集成功: ${name}`,
+          {
+            id: `run-${id}`,
+            description: response.data.message || '采集任务已完成',
+            duration: 5000,
+          }
+        )
+        // 刷新列表以更新统计信息
+        await loadAdapters()
       } else {
-        toast.error(`启动失败: ${response.message}`)
+        toast.error(
+          `采集失败: ${name}`,
+          {
+            id: `run-${id}`,
+            description: response.message || '未知错误',
+            duration: 5000,
+          }
+        )
       }
     } catch (err) {
-      toast.error(`启动失败: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      toast.error(
+        `采集失败: ${name}`,
+        {
+          id: `run-${id}`,
+          description: err instanceof Error ? err.message : '网络错误',
+          duration: 5000,
+        }
+      )
+    } finally {
+      setRunningAdapters(prev => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
     }
   }
 
@@ -285,40 +324,51 @@ export default function CollectorsPage() {
                       {getSuccessRate(adapter)}%
                     </td>
                     <td className="px-4">
-                      <div className="flex items-center justify-end gap-3">
-                        <button 
-                          className="text-muted-foreground hover:text-foreground transition-colors"
-                          onClick={() => handleRun(adapterId)}
-                          title="手动运行"
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => handleRun(adapterId, adapter.name)}
+                          disabled={runningAdapters.has(adapterId)}
+                          className="gap-1.5"
                         >
-                          <Play className="w-4 h-4" />
-                        </button>
+                          {runningAdapters.has(adapterId) ? (
+                            <>
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              采集中
+                            </>
+                          ) : (
+                            <>
+                              <Play className="w-3.5 h-3.5" />
+                              立即采集
+                            </>
+                          )}
+                        </Button>
                         {adapter.status === 'running' ? (
                           <button 
-                            className="text-muted-foreground hover:text-foreground transition-colors"
+                            className="text-muted-foreground hover:text-foreground transition-colors p-1.5"
                             onClick={() => handleStop(adapterId)}
-                            title="停止"
+                            title="停止定时任务"
                           >
                             <Pause className="w-4 h-4" />
                           </button>
                         ) : (
                           <button 
-                            className="text-muted-foreground hover:text-foreground transition-colors"
+                            className="text-muted-foreground hover:text-foreground transition-colors p-1.5"
                             onClick={() => handleStart(adapterId)}
-                            title="启动"
+                            title="启动定时任务"
                           >
                             <Play className="w-4 h-4" />
                           </button>
                         )}
                         <button 
-                          className="text-muted-foreground hover:text-foreground transition-colors"
+                          className="text-muted-foreground hover:text-foreground transition-colors p-1.5"
                           onClick={() => toast.info('配置功能开发中')}
                           title="配置"
                         >
                           <Settings className="w-4 h-4" />
                         </button>
                         <button 
-                          className="text-muted-foreground hover:text-destructive transition-colors"
+                          className="text-muted-foreground hover:text-destructive transition-colors p-1.5"
                           onClick={() => handleDelete(adapterId)}
                           title="删除"
                         >

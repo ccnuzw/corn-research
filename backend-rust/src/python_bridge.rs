@@ -51,7 +51,6 @@ pub async fn run_python_collector(
     
     // 构建命令参数
     let mut args = vec![
-        script_path.to_str().unwrap().to_string(),
         "--collector".to_string(),
         collector_id.to_string(),
         "--format".to_string(),
@@ -66,6 +65,7 @@ pub async fn run_python_collector(
     // 执行Python命令
     let output = tokio::task::spawn_blocking(move || {
         Command::new("python3")
+            .arg(script_path)
             .args(&args)
             .output()
     })
@@ -86,8 +86,13 @@ pub async fn run_python_collector(
         .map_err(|e| format!("Failed to parse collector response: {}", e))?;
     
     if !response.success {
+        tracing::warn!(collector_id, stderr = %String::from_utf8_lossy(&output.stderr),
+            "Python collector reported failure");
         return Err(response.error.unwrap_or_else(|| "Unknown error".to_string()));
     }
+
+    tracing::info!(collector_id, stderr = %String::from_utf8_lossy(&output.stderr),
+        "Python collector diagnostics");
     
     tracing::info!("✅ Collected {} records from {}", response.records.len(), collector_id);
     Ok(response.records)
@@ -112,10 +117,8 @@ pub async fn list_available_collectors() -> Result<Vec<String>, String> {
     
     let output = tokio::task::spawn_blocking(move || {
         Command::new("python3")
-            .args(&[
-                script_path.to_str().unwrap(),
-                "--list",
-            ])
+            .arg(script_path)
+            .arg("--list")
             .output()
     })
     .await

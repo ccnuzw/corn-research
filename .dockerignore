@@ -35,6 +35,7 @@ dist/
 *.csv
 *.json
 data/
+logs/
 
 # 文档
 docs/

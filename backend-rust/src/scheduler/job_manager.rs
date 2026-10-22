@@ -1,338 +1,226 @@
-//! Job Manager - 定时任务管理器
-//!
-//! 基于tokio-cron-scheduler实现定时任务调度
-
-use tokio_cron_scheduler::{Job, JobScheduler, JobSchedulerError};
-use std::sync::Arc;
-use serde::{Serialize, Deserialize};
-use uuid::Uuid;
-use chrono::{DateTime, Utc};
+//! PostgreSQL-backed schedules; tokio-cron-scheduler 0.9 evaluates cron in UTC.
 use std::collections::HashMap;
+use chrono::{DateTime, Utc};
+use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, FromQueryResult, Statement, TransactionTrait, Value};
+use serde::{Deserialize, Serialize};
+use tokio_cron_scheduler::{Job, JobScheduler};
+use uuid::Uuid;
+use crate::{collection_execution, notification::NotificationService};
 
-/// 定时任务管理器
-pub struct JobManager {
-    scheduler: JobScheduler,
-    job_metadata: Arc<tokio::sync::RwLock<HashMap<Uuid, JobMetadata>>>,
+fn sql(text: &str, values: Vec<Value>) -> Statement {
+    Statement::from_sql_and_values(DbBackend::Postgres, text, values)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, FromQueryResult)]
 pub struct JobInfo {
-    pub id: String,
+    pub id: Uuid,
     pub name: String,
-    pub collector_id: Option<String>,
+    pub collector_id: String,
     pub cron_expression: String,
     pub enabled: bool,
     pub description: Option<String>,
+    pub status: String,
     pub last_run: Option<DateTime<Utc>>,
-    pub next_run: Option<DateTime<Utc>>,
-    pub total_runs: u32,
-    pub success_count: u32,
+    pub last_error: Option<String>,
+    pub total_runs: i64,
+    pub success_count: i64,
+    pub failed_count: i64,
     pub created_at: DateTime<Utc>,
+    #[sea_orm(skip)]
+    pub next_run: Option<DateTime<Utc>>,
+    #[sea_orm(skip)]
+    pub timezone: String,
 }
 
-#[derive(Debug, Clone)]
-struct JobMetadata {
-    name: String,
-    collector_id: Option<String>,
-    cron_expression: String,
-    description: Option<String>,
-    created_at: DateTime<Utc>,
-    last_run: Option<DateTime<Utc>>,
-    total_runs: u32,
-    success_count: u32,
-    enabled: bool,
+#[derive(Debug, Serialize, FromQueryResult)]
+pub struct Execution {
+    pub id: Uuid,
+    pub job_id: Uuid,
+    pub trigger_type: String,
+    pub status: String,
+    pub started_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub records_collected: i32,
+    pub collection_run_id: Option<String>,
+    pub error_message: Option<String>,
+}
+
+#[derive(Default, Deserialize)]
+pub struct ExecutionsQuery {
+    pub limit: Option<u64>,
+    pub offset: Option<u64>,
+    pub status: Option<String>,
+    pub start_date: Option<DateTime<Utc>>,
+    pub end_date: Option<DateTime<Utc>>,
+}
+
+pub struct JobManager {
+    scheduler: JobScheduler,
+    db: DatabaseConnection,
+    notifications: NotificationService,
+    runtime_ids: HashMap<Uuid, Uuid>,
 }
 
 impl JobManager {
-    /// 创建新的任务管理器
-    pub async fn new() -> Result<Self, JobSchedulerError> {
+    pub async fn new(db: DatabaseConnection, notifications: NotificationService) -> anyhow::Result<Self> {
         let scheduler = JobScheduler::new().await?;
-        
-        tracing::info!("✅ Job scheduler initialized");
-        
-        Ok(Self { 
-            scheduler,
-            job_metadata: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
-        })
+        let mut manager = Self { scheduler, db, notifications, runtime_ids: HashMap::new() };
+        // Single-backend Compose deployment: no previous worker can survive a restart.
+        let txn = manager.db.begin().await?;
+        txn.execute(sql("UPDATE job_executions SET status='failed', completed_at=NOW(), error_message='Backend restarted before execution completed' WHERE status='running'", vec![])).await?;
+        txn.execute(sql("UPDATE scheduled_jobs SET status='failed', failed_count=failed_count+1, last_error='Backend restarted before execution completed' WHERE status='running'", vec![])).await?;
+        txn.commit().await?;
+        for job in manager.list_jobs().await? {
+            if job.enabled { manager.register(&job).await?; }
+        }
+        Ok(manager)
     }
-    
-    /// 启动调度器
-    pub async fn start(&self) -> Result<(), JobSchedulerError> {
+
+    pub async fn start(&self) -> anyhow::Result<()> {
         self.scheduler.start().await?;
-        tracing::info!("🚀 Job scheduler started");
+        tracing::info!(jobs = self.runtime_ids.len(), timezone = "UTC", "Persistent scheduler started");
         Ok(())
     }
-    
-    /// 停止调度器
-    pub async fn shutdown(&mut self) -> Result<(), JobSchedulerError> {
-        self.scheduler.shutdown().await?;
-        tracing::info!("🛑 Job scheduler stopped");
-        Ok(())
-    }
-    
-    /// 添加每日采集任务（每天8:00执行）
-    /// 
-    /// # Arguments
-    /// * `collector_ids` - 采集器ID列表（按顺序串行执行）
-    pub async fn add_daily_collection_job(
-        &self,
-        collector_ids: Vec<String>,
-    ) -> Result<Uuid, JobSchedulerError> {
-        let metadata = self.job_metadata.clone();
-        let job_name = "Daily Collection".to_string();
-        let cron_expr = "0 0 8 * * *".to_string();
-        
-        let job = Job::new_async("0 0 8 * * *", move |uuid, _l| {
-            let ids = collector_ids.clone();
-            let meta = metadata.clone();
+
+    async fn register(&mut self, info: &JobInfo) -> anyhow::Result<()> {
+        let db = self.db.clone();
+        let notifications = self.notifications.clone();
+        let id = info.id;
+        let job = Job::new_async(info.cron_expression.as_str(), move |_, _| {
+            let db = db.clone();
+            let notifications = notifications.clone();
             Box::pin(async move {
-                tracing::info!("🌅 Daily collection job started");
-                
-                // 更新运行计数
-                {
-                    let mut map = meta.write().await;
-                    if let Some(m) = map.get_mut(&uuid) {
-                        m.last_run = Some(Utc::now());
-                        m.total_runs += 1;
-                    }
-                }
-                
-                let mut success = true;
-                for collector_id in &ids {
-                    tracing::info!("🔄 Running collector: {}", collector_id);
-                    
-                    // 调用采集器（通过Python桥接）
-                    match run_collector(collector_id).await {
-                        Ok(count) => {
-                            tracing::info!("✅ Collector {} completed: {} records", collector_id, count);
-                        }
-                        Err(e) => {
-                            tracing::error!("❌ Collector {} failed: {}", collector_id, e);
-                            success = false;
-                            
-                            // 重试逻辑：最多3次，每次间隔1分钟
-                            for retry in 1..=3 {
-                                tracing::warn!("🔄 Retry {}/3 for collector {}", retry, collector_id);
-                                tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-                                
-                                match run_collector(collector_id).await {
-                                    Ok(count) => {
-                                        tracing::info!("✅ Collector {} succeeded on retry {}: {} records", 
-                                            collector_id, retry, count);
-                                        success = true;
-                                        break;
-                                    }
-                                    Err(e) => {
-                                        tracing::error!("❌ Retry {}/3 failed: {}", retry, e);
-                                        if retry == 3 {
-                                            tracing::error!("❌ All retries exhausted for collector {}", collector_id);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                // 更新成功计数
-                if success {
-                    let mut map = meta.write().await;
-                    if let Some(m) = map.get_mut(&uuid) {
-                        m.success_count += 1;
-                    }
-                }
-                
-                tracing::info!("🎉 Daily collection job completed");
-            })
-        })?;
-        
-        let job_id = self.scheduler.add(job).await?;
-        
-        // 存储元数据
-        self.job_metadata.write().await.insert(job_id, JobMetadata {
-            name: job_name,
-            collector_id: None,
-            cron_expression: cron_expr,
-            description: Some("每日定时采集任务".to_string()),
-            created_at: Utc::now(),
-            last_run: None,
-            total_runs: 0,
-            success_count: 0,
-            enabled: true,
-        });
-        
-        tracing::info!("📅 Daily collection job added: {}", job_id);
-        
-        Ok(job_id)
-    }
-    
-    /// 添加自定义采集器任务
-    pub async fn add_collector_job(
-        &self,
-        name: String,
-        collector_id: String,
-        cron_expr: &str,
-        description: Option<String>,
-    ) -> Result<Uuid, JobSchedulerError> {
-        let metadata = self.job_metadata.clone();
-        let cid = collector_id.clone();
-        
-        let job = Job::new_async(cron_expr, move |uuid, _l| {
-            let collector = cid.clone();
-            let meta = metadata.clone();
-            Box::pin(async move {
-                tracing::info!("🔄 Scheduled job running collector: {}", collector);
-                
-                // 更新运行计数
-                {
-                    let mut map = meta.write().await;
-                    if let Some(m) = map.get_mut(&uuid) {
-                        m.last_run = Some(Utc::now());
-                        m.total_runs += 1;
-                    }
-                }
-                
-                match run_collector(&collector).await {
-                    Ok(count) => {
-                        tracing::info!("✅ Collector {} completed: {} records", collector, count);
-                        
-                        // 更新成功计数
-                        {
-                            let mut map = meta.write().await;
-                            if let Some(m) = map.get_mut(&uuid) {
-                                m.success_count += 1;
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!("❌ Collector {} failed: {}", collector, e);
-                    }
+                if let Err(e) = launch(db, notifications, id, "scheduled").await {
+                    tracing::warn!(job_id=%id, error=%e, "Scheduled execution skipped or failed to start");
                 }
             })
         })?;
-        
-        let job_id = self.scheduler.add(job).await?;
-        
-        // 存储元数据
-        self.job_metadata.write().await.insert(job_id, JobMetadata {
-            name: name.clone(),
-            collector_id: Some(collector_id),
-            cron_expression: cron_expr.to_string(),
-            description,
-            created_at: Utc::now(),
-            last_run: None,
-            total_runs: 0,
-            success_count: 0,
-            enabled: true,
-        });
-        
-        tracing::info!("📅 Custom collector job '{}' added: {}", name, job_id);
-        
-        Ok(job_id)
-    }
-    
-    /// 删除任务
-    pub async fn remove_job(&self, job_id: Uuid) -> Result<(), JobSchedulerError> {
-        self.scheduler.remove(&job_id).await?;
-        self.job_metadata.write().await.remove(&job_id);
-        tracing::info!("🗑️ Job removed: {}", job_id);
+        let runtime = self.scheduler.add(job).await?;
+        self.runtime_ids.insert(info.id, runtime);
         Ok(())
     }
-    
-    /// 启用/禁用任务
-    pub async fn toggle_job(&self, job_id: Uuid, enabled: bool) -> Result<(), JobSchedulerError> {
-        if let Some(metadata) = self.job_metadata.write().await.get_mut(&job_id) {
-            metadata.enabled = enabled;
-            tracing::info!("🔄 Job {} {}", job_id, if enabled { "enabled" } else { "disabled" });
-        }
-        Ok(())
-    }
-    
-    /// 手动触发任务
-    pub async fn trigger_job(&mut self, job_id: Uuid) -> Result<(), JobSchedulerError> {
-        // 获取任务的采集器ID
-        let collector_id = {
-            let metadata = self.job_metadata.read().await;
-            metadata.get(&job_id)
-                .and_then(|m| m.collector_id.clone())
-        };
-        
-        if let Some(cid) = collector_id {
-            tracing::info!("🔄 Manually triggering job {}: collector {}", job_id, cid);
-            
-            // 异步执行采集器
-            tokio::spawn(async move {
-                match run_collector(&cid).await {
-                    Ok(count) => {
-                        tracing::info!("✅ Manual trigger completed: {} records", count);
-                    }
-                    Err(e) => {
-                        tracing::error!("❌ Manual trigger failed: {}", e);
-                    }
-                }
-            });
-            
-            Ok(())
-        } else {
-            tracing::warn!("⚠️ Job {} has no associated collector", job_id);
-            Err(JobSchedulerError::UpdateJobData)
-        }
-    }
-    
-    /// 列出所有任务
-    pub async fn list_jobs(&self) -> Vec<JobInfo> {
-        let metadata = self.job_metadata.read().await;
-        
-        metadata.iter().map(|(id, meta)| {
-            JobInfo {
-                id: id.to_string(),
-                name: meta.name.clone(),
-                collector_id: meta.collector_id.clone(),
-                cron_expression: meta.cron_expression.clone(),
-                enabled: meta.enabled,
-                description: meta.description.clone(),
-                last_run: meta.last_run,
-                next_run: None, // TODO: 计算下次运行时间
-                total_runs: meta.total_runs,
-                success_count: meta.success_count,
-                created_at: meta.created_at,
+
+    pub async fn list_jobs(&mut self) -> anyhow::Result<Vec<JobInfo>> {
+        let mut jobs = JobInfo::find_by_statement(sql("SELECT * FROM scheduled_jobs ORDER BY created_at,id", vec![]))
+            .all(&self.db).await?;
+        for job in &mut jobs {
+            job.timezone = "UTC".into();
+            if let Some(runtime) = self.runtime_ids.get(&job.id) {
+                job.next_run = self.scheduler.next_tick_for_job(*runtime).await?;
             }
-        }).collect()
+        }
+        Ok(jobs)
+    }
+
+    pub async fn add_collector_job(&mut self, name: String, collector_id: String, cron_expr: &str,
+                                   description: Option<String>, enabled: bool) -> anyhow::Result<Uuid> {
+        if name.trim().is_empty() { anyhow::bail!("name must not be empty"); }
+        Job::new_async(cron_expr, |_, _| Box::pin(async {}))?;
+        collection_execution::resolve_adapter(&self.db, &collector_id).await.map_err(anyhow::Error::msg)?;
+        let id = Uuid::new_v4();
+        self.db.execute(sql("INSERT INTO scheduled_jobs(id,name,collector_id,cron_expression,description,enabled) VALUES($1,$2,$3,$4,$5,$6)",
+            vec![id.into(), name.into(), collector_id.into(), cron_expr.into(), description.into(), enabled.into()])).await?;
+        if enabled {
+            let job = self.get_job(id).await?;
+            if let Err(e) = self.register(&job).await {
+                self.db.execute(sql("DELETE FROM scheduled_jobs WHERE id=$1", vec![id.into()])).await?;
+                return Err(e);
+            }
+        }
+        Ok(id)
+    }
+
+    async fn get_job(&self, id: Uuid) -> anyhow::Result<JobInfo> {
+        JobInfo::find_by_statement(sql("SELECT * FROM scheduled_jobs WHERE id=$1", vec![id.into()]))
+            .one(&self.db).await?.ok_or_else(|| anyhow::anyhow!("Job not found"))
+    }
+
+    pub async fn remove_job(&mut self, id: Uuid) -> anyhow::Result<()> {
+        let job = self.get_job(id).await?;
+        if job.status == "running" { anyhow::bail!("Job is running"); }
+        if let Some(runtime) = self.runtime_ids.remove(&id) { self.scheduler.remove(&runtime).await?; }
+        self.db.execute(sql("DELETE FROM scheduled_jobs WHERE id=$1", vec![id.into()])).await?;
+        Ok(())
+    }
+
+    pub async fn toggle_job(&mut self, id: Uuid, enabled: bool) -> anyhow::Result<()> {
+        let mut job = self.get_job(id).await?;
+        if job.enabled == enabled { return Ok(()); }
+        if enabled {
+            job.enabled = true;
+            self.register(&job).await?;
+        } else if let Some(runtime) = self.runtime_ids.remove(&id) {
+            self.scheduler.remove(&runtime).await?;
+        }
+        self.db.execute(sql("UPDATE scheduled_jobs SET enabled=$2 WHERE id=$1", vec![id.into(), enabled.into()])).await?;
+        Ok(())
+    }
+
+    pub async fn trigger_job(&self, id: Uuid) -> anyhow::Result<Uuid> {
+        launch(self.db.clone(), self.notifications.clone(), id, "manual").await
+    }
+
+    pub async fn executions(&self, id: Uuid, q: ExecutionsQuery) -> anyhow::Result<Vec<Execution>> {
+        self.get_job(id).await?;
+        let limit = q.limit.unwrap_or(20);
+        if !(1..=100).contains(&limit) || q.offset.unwrap_or(0) > i64::MAX as u64 {
+            anyhow::bail!("limit must be 1..100 and offset must fit int64");
+        }
+        if q.status.as_deref().is_some_and(|s| !["running","success","failed"].contains(&s)) {
+            anyhow::bail!("Invalid execution status");
+        }
+        if matches!((q.start_date,q.end_date), (Some(a),Some(b)) if a>b) {
+            anyhow::bail!("start_date must not exceed end_date");
+        }
+        Ok(Execution::find_by_statement(sql(
+            "SELECT * FROM job_executions WHERE job_id=$1 AND ($2::text IS NULL OR status=$2) AND ($3::timestamptz IS NULL OR started_at >= $3) AND ($4::timestamptz IS NULL OR started_at <= $4) ORDER BY started_at DESC,id DESC LIMIT $5 OFFSET $6",
+            vec![id.into(), q.status.into(), q.start_date.into(), q.end_date.into(), (limit as i64).into(), (q.offset.unwrap_or(0) as i64).into()]
+        )).all(&self.db).await?)
     }
 }
 
-/// 执行采集器（TODO: 与python_bridge集成）
-async fn run_collector(collector_id: &str) -> Result<usize, anyhow::Error> {
-    // 这里需要调用实际的Python采集器
-    // 暂时返回模拟结果
-    tracing::debug!("Simulating collector run: {}", collector_id);
-    
-    // 模拟延迟
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-    
-    // 返回模拟的采集条数
-    Ok(42)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    
-    #[tokio::test]
-    async fn test_job_manager_creation() {
-        let manager = JobManager::new().await.unwrap();
-        manager.start().await.unwrap();
-        
-        // 测试添加任务
-        let job_id = manager.add_daily_collection_job(vec![
-            "boyar".to_string(),
-            "sina".to_string(),
-        ]).await.unwrap();
-        
-        assert_ne!(job_id, Uuid::nil());
-        
-        // 测试列出任务
-        let jobs = manager.list_jobs().await;
-        assert_eq!(jobs.len(), 1);
-    }
+async fn launch(db: DatabaseConnection, notifications: NotificationService, id: Uuid,
+                trigger_type: &str) -> anyhow::Result<Uuid> {
+    let txn = db.begin().await?;
+    let row = txn.query_one(sql(
+        "UPDATE scheduled_jobs SET status='running',last_run=NOW(),last_error=NULL,total_runs=total_runs+1 WHERE id=$1 AND status <> 'running' AND ($2='manual' OR enabled) RETURNING collector_id",
+        vec![id.into(), trigger_type.into()])).await?
+        .ok_or_else(|| anyhow::anyhow!("Job not found, disabled, or already running"))?;
+    let collector: String = row.try_get("", "collector_id")?;
+    let execution = Uuid::new_v4();
+    txn.execute(sql("INSERT INTO job_executions(id,job_id,trigger_type,status) VALUES($1,$2,$3,'running')",
+        vec![execution.into(), id.into(), trigger_type.into()])).await?;
+    txn.commit().await?;
+    tokio::spawn(async move {
+        let result = async {
+            let adapter = collection_execution::resolve_adapter(&db, &collector).await.map_err(anyhow::Error::msg)?;
+            let run = collection_execution::start_run(&db, &adapter.id).await?;
+            db.execute(sql("UPDATE job_executions SET collection_run_id=$2 WHERE id=$1",
+                vec![execution.into(), run.id.clone().into()])).await?;
+            collection_execution::execute_run(db.clone(), adapter, run, 100, true)
+                .await.map_err(anyhow::Error::msg)
+        }.await;
+        let (status,count,error) = match result {
+            Ok(count) => ("success", count as i32, None),
+            Err(e) => ("failed", 0, Some(e.to_string())),
+        };
+        let finish = async {
+            let txn = db.begin().await?;
+            txn.execute(sql("UPDATE job_executions SET status=$2,completed_at=NOW(),records_collected=$3,error_message=$4 WHERE id=$1",
+                vec![execution.into(), status.into(), count.into(), error.clone().into()])).await?;
+            txn.execute(sql("UPDATE scheduled_jobs SET status=$2,last_error=$3,success_count=success_count+$4,failed_count=failed_count+$5 WHERE id=$1",
+                vec![id.into(), status.into(), error.clone().into(), (if error.is_none(){1i64}else{0}).into(), (if error.is_some(){1i64}else{0}).into()])).await?;
+            txn.commit().await
+        }.await;
+        if let Err(e) = finish { tracing::error!(job_id=%id, execution_id=%execution, error=%e, "Failed to persist execution outcome"); }
+        if let Some(error) = error {
+            tracing::error!(job_id=%id, execution_id=%execution, %collector, %error, "Scheduled collection failed");
+            if let Err(e) = notifications.notify("定时采集失败", &format!("job={} execution={} collector={}: {}", id, execution, collector, error), "error").await {
+                tracing::error!(error=%e, "Failed to publish scheduler failure notification");
+            }
+        } else {
+            tracing::info!(job_id=%id, execution_id=%execution, records=count, "Scheduled collection completed");
+        }
+    });
+    Ok(execution)
 }

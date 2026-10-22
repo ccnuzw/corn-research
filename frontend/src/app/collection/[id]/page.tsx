@@ -2,45 +2,44 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import { AppLayout } from '@/components/layout/app-layout';
+import { Breadcrumb } from '@/components/ui/breadcrumb';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Play, Square, RefreshCw, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Play, Square, RefreshCw, AlertCircle, Database, Clock, CheckCircle, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { api, type Adapter, type Source, type CollectionRun, type CollectionRecord } from '@/lib/api';
+import { api, type AdapterWithSource, type CollectionRun, type CollectionRecord } from '@/lib/api';
 
 export default function AdapterDetailPage() {
   const router = useRouter();
   const params = useParams();
   const adapterId = params.id as string;
 
-  const [adapter, setAdapter] = useState<Adapter | null>(null);
-  const [source, setSource] = useState<Source | null>(null);
+  const [adapter, setAdapter] = useState<AdapterWithSource | null>(null);
   const [runHistory, setRunHistory] = useState<CollectionRun[]>([]);
   const [collectedData, setCollectedData] = useState<CollectionRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('info');
+  const [runningCollection, setRunningCollection] = useState(false);
+  const [activeTab, setActiveTab] = useState('history');
 
   const loadAdapterDetails = useCallback(async () => {
     setLoading(true);
     try {
       const [adapterData, historyData, recordsData] = await Promise.all([
         api.getAdapter(adapterId),
-        api.getAdapterRuns(adapterId),
+        api.getAdapterRuns(adapterId, 20),
         api.getAdapterRecords(adapterId, 50),
       ]);
 
       if (adapterData.success && adapterData.data) {
-        if (!historyData.success) throw new Error(historyData.message || '加载运行历史失败');
-        if (!recordsData.success) throw new Error(recordsData.message || '加载采集数据失败');
         setAdapter(adapterData.data);
-        setSource(adapterData.data.source);
         setRunHistory(historyData.data || []);
         setCollectedData(recordsData.data || []);
       } else {
         toast.error('适配器不存在');
-        router.push('/collection');
+        router.push('/collectors');
       }
     } catch (error) {
       console.error('Failed to load adapter details:', error);
@@ -52,7 +51,55 @@ export default function AdapterDetailPage() {
 
   useEffect(() => {
     loadAdapterDetails();
+    // 每10秒自动刷新
+    const interval = setInterval(loadAdapterDetails, 10000);
+    return () => clearInterval(interval);
   }, [loadAdapterDetails]);
+
+  const handleRunNow = async () => {
+    if (!adapter || runningCollection) return;
+
+    setRunningCollection(true);
+    try {
+      toast.loading(`开始采集: ${adapter.name}`, { id: 'run-now' });
+      
+      const response = await api.runAdapter(adapterId);
+      
+      if (response.success && response.data) {
+        toast.success(
+          `采集成功: ${adapter.name}`,
+          {
+            id: 'run-now',
+            description: response.data.message || '采集任务已完成',
+            duration: 5000,
+          }
+        );
+        // 刷新数据
+        await loadAdapterDetails();
+      } else {
+        toast.error(
+          `采集失败: ${adapter.name}`,
+          {
+            id: 'run-now',
+            description: response.message || '未知错误',
+            duration: 5000,
+          }
+        );
+      }
+    } catch (error) {
+      console.error('Failed to run adapter:', error);
+      toast.error(
+        `采集失败: ${adapter.name}`,
+        {
+          id: 'run-now',
+          description: error instanceof Error ? error.message : '网络错误',
+          duration: 5000,
+        }
+      );
+    } finally {
+      setRunningCollection(false);
+    }
+  };
 
   const handleStartStop = async () => {
     if (!adapter) return;
@@ -64,276 +111,432 @@ export default function AdapterDetailPage() {
         : await api.startAdapter(adapterId);
 
       if (result.success) {
-        toast.success(action === 'start' ? '采集已启动' : '采集已停止');
+        toast.success(action === 'start' ? '定时任务已启动' : '定时任务已停止');
         await loadAdapterDetails();
       } else {
         toast.error(result.message || `${action === 'start' ? '启动' : '停止'}失败`);
       }
     } catch (error) {
       console.error(`Failed to ${action} adapter:`, error);
-      toast.error(`${action === 'start' ? '启动' : '停止'}采集失败`);
+      toast.error(`${action === 'start' ? '启动' : '停止'}定时任务失败`);
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, { label: string; className: string }> = {
-      running: { label: '运行中', className: 'bg-green-500' },
-      stopped: { label: '已停止', className: 'bg-gray-500' },
-      error: { label: '错误', className: 'bg-red-500' },
-      success: { label: '成功', className: 'bg-green-500' },
-      failed: { label: '失败', className: 'bg-red-500' },
+  const getStatusBadge = (status: string | null) => {
+    const statusMap: Record<string, { label: string; variant: 'success' | 'destructive' | 'secondary' | 'default' }> = {
+      running: { label: '运行中', variant: 'secondary' },
+      stopped: { label: '已停止', variant: 'secondary' },
+      error: { label: '错误', variant: 'destructive' },
+      success: { label: '成功', variant: 'success' },
+      failed: { label: '失败', variant: 'destructive' },
     };
-    const variant = variants[status] || variants.stopped;
-    return <Badge className={variant.className}>{variant.label}</Badge>;
+    const statusInfo = statusMap[status || 'stopped'] || statusMap.stopped;
+    return (
+      <Badge variant={statusInfo.variant} className="rounded-full">
+        {statusInfo.label}
+      </Badge>
+    );
+  };
+
+  const formatDuration = (startedAt: string, completedAt: string | null) => {
+    if (!completedAt) return '-';
+    const start = new Date(startedAt).getTime();
+    const end = new Date(completedAt).getTime();
+    const durationMs = end - start;
+    
+    if (durationMs < 1000) return `${durationMs}ms`;
+    if (durationMs < 60000) return `${(durationMs / 1000).toFixed(2)}s`;
+    return `${(durationMs / 60000).toFixed(1)}min`;
+  };
+
+  const formatDateTime = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  };
+
+  const formatRelativeTime = (dateStr: string | null) => {
+    if (!dateStr) return '从未运行';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+
+    if (minutes < 1) return '刚刚';
+    if (minutes < 60) return `${minutes}分钟前`;
+    if (hours < 24) return `${hours}小时前`;
+    return `${days}天前`;
   };
 
   if (loading) {
     return (
-      <div className="p-6 flex items-center justify-center h-96">
-        <div className="text-muted-foreground">加载中...</div>
-      </div>
+      <AppLayout title="采集器详情">
+        <div className="flex items-center justify-center h-96">
+          <RefreshCw className="w-8 h-8 animate-spin text-muted-foreground" />
+        </div>
+      </AppLayout>
     );
   }
 
   if (!adapter) {
     return (
-      <div className="p-6">
+      <AppLayout title="采集器详情">
         <div className="text-center py-12">
           <AlertCircle className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
           <p className="text-muted-foreground">适配器不存在</p>
-          <Button onClick={() => router.push('/collection')} className="mt-4">
+          <Button onClick={() => router.push('/collectors')} className="mt-4">
             返回列表
           </Button>
         </div>
-      </div>
+      </AppLayout>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={() => router.push('/collection')}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            返回
-          </Button>
-          <div>
+    <AppLayout title={adapter.name} subtitle="采集器详情和运行历史">
+      <div className="space-y-4">
+        {/* 面包屑 */}
+        <Breadcrumb
+          items={[
+            { label: '控制台', href: '/' },
+            { label: '采集器管理', href: '/collectors' },
+            { label: adapter.name, icon: <Database className="w-4 h-4" /> },
+          ]}
+        />
+
+        {/* 统计卡片 */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="rounded-lg border border-border/60 bg-card p-4">
             <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-bold">{adapter.name}</h1>
-              {getStatusBadge(adapter.status)}
-            </div>
-            <p className="text-muted-foreground mt-1">适配器详情和运行数据</p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={loadAdapterDetails} className="gap-2">
-            <RefreshCw className="w-4 h-4" />刷新
-          </Button>
-          <Button
-            variant={adapter.status === 'running' ? 'destructive' : 'default'}
-            onClick={handleStartStop}
-            className="gap-2"
-          >
-            {adapter.status === 'running' ? (
-              <>
-                <Square className="w-4 h-4" />
-                停止采集
-              </>
-            ) : (
-              <>
-                <Play className="w-4 h-4" />
-                启动采集
-              </>
-            )}
-          </Button>
-        </div>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card className="p-4">
-          <div className="text-sm text-muted-foreground">总运行次数</div>
-          <div className="text-2xl font-bold mt-1">{adapter.total_runs}</div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-sm text-muted-foreground">成功次数</div>
-          <div className="text-2xl font-bold mt-1 text-green-600">{adapter.successful_runs}</div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-sm text-muted-foreground">失败次数</div>
-          <div className="text-2xl font-bold mt-1 text-red-600">{adapter.failed_runs}</div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-sm text-muted-foreground">成功率</div>
-          <div className="text-2xl font-bold mt-1">
-            {adapter.total_runs > 0
-              ? `${((adapter.successful_runs / adapter.total_runs) * 100).toFixed(1)}%`
-              : 'N/A'}
-          </div>
-        </Card>
-      </div>
-
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="info">基本信息</TabsTrigger>
-          <TabsTrigger value="history">运行历史</TabsTrigger>
-          <TabsTrigger value="data">采集数据</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="info" className="space-y-4">
-          <Card className="p-6">
-            <h2 className="text-lg font-semibold mb-4">适配器配置</h2>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <div className="text-sm text-muted-foreground">适配器ID</div>
-                <div className="font-mono text-sm mt-1">{adapter.id}</div>
+              <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                <Database className="w-5 h-5 text-blue-500" />
               </div>
               <div>
-                <div className="text-sm text-muted-foreground">脚本文件</div>
-                <div className="font-mono text-sm mt-1">{adapter.script_file}</div>
-              </div>
-              <div>
-                <div className="text-sm text-muted-foreground">数据源</div>
-                <div className="mt-1">{source?.name || adapter.source_id}</div>
-              </div>
-              <div>
-                <div className="text-sm text-muted-foreground">数据主题</div>
-                <div className="mt-1">{adapter.topic_name}</div>
-              </div>
-              <div>
-                <div className="text-sm text-muted-foreground">创建时间</div>
-                <div className="text-sm mt-1">
-                  {adapter.created_at ? new Date(adapter.created_at).toLocaleString('zh-CN') : '-'}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm text-muted-foreground">最后运行</div>
-                <div className="text-sm mt-1">
-                  {adapter.last_run_at
-                    ? new Date(adapter.last_run_at).toLocaleString('zh-CN')
-                    : '从未运行'}
-                </div>
+                <div className="text-2xl font-bold">{adapter.total_runs}</div>
+                <div className="text-xs text-muted-foreground">总运行次数</div>
               </div>
             </div>
-          </Card>
+          </div>
 
-          {source && (
-            <Card className="p-6">
-              <h2 className="text-lg font-semibold mb-4">数据源信息</h2>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <div className="text-sm text-muted-foreground">名称</div>
-                  <div className="mt-1">{source.name}</div>
+          <div className="rounded-lg border border-border/60 bg-card p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
+                <CheckCircle className="w-5 h-5 text-green-500" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-green-600">{adapter.successful_runs}</div>
+                <div className="text-xs text-muted-foreground">成功次数</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-border/60 bg-card p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-red-500/10 flex items-center justify-center">
+                <XCircle className="w-5 h-5 text-red-500" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-red-600">{adapter.failed_runs}</div>
+                <div className="text-xs text-muted-foreground">失败次数</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-border/60 bg-card p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center">
+                <Clock className="w-5 h-5 text-purple-500" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold">
+                  {adapter.total_runs > 0
+                    ? `${((adapter.successful_runs / adapter.total_runs) * 100).toFixed(1)}%`
+                    : 'N/A'}
                 </div>
-                <div>
-                  <div className="text-sm text-muted-foreground">域名</div>
-                  <div className="mt-1">{source.domain}</div>
-                </div>
-                <div className="md:col-span-2">
-                  <div className="text-sm text-muted-foreground">描述</div>
-                  <div className="mt-1">{source.description}</div>
+                <div className="text-xs text-muted-foreground">成功率</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 操作按钮栏 */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={handleRunNow}
+              disabled={runningCollection}
+              className="gap-1.5"
+            >
+              {runningCollection ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  采集中
+                </>
+              ) : (
+                <>
+                  <Play className="w-3.5 h-3.5" />
+                  立即采集
+                </>
+              )}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleStartStop}
+              className="gap-1.5"
+            >
+              {adapter.status === 'running' ? (
+                <>
+                  <Square className="w-3.5 h-3.5" />
+                  停止定时任务
+                </>
+              ) : (
+                <>
+                  <Play className="w-3.5 h-3.5" />
+                  启动定时任务
+                </>
+              )}
+            </Button>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              最后运行: {formatRelativeTime(adapter.last_run_at)}
+            </span>
+            <Button variant="outline" size="sm" onClick={loadAdapterDetails} disabled={loading}>
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="history">运行历史</TabsTrigger>
+            <TabsTrigger value="data">采集数据</TabsTrigger>
+            <TabsTrigger value="info">基本信息</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="history">
+            <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
+              <div className="p-5 border-b border-border/60">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold">运行历史</h3>
+                    <p className="text-sm text-muted-foreground mt-1">最近 {runHistory.length} 条运行记录</p>
+                  </div>
+                  {getStatusBadge(adapter.status)}
                 </div>
               </div>
-            </Card>
-          )}
-        </TabsContent>
 
-        <TabsContent value="history" className="space-y-4">
-          <Card className="p-6">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">运行历史</h2>
-                <span className="text-sm text-muted-foreground">最近 {runHistory.length} 条记录</span>
-              </div>
               {runHistory.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">暂无运行历史</div>
+                <div className="p-12 text-center text-muted-foreground">
+                  <Clock className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                  <p>暂无运行历史</p>
+                </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <thead>
-                      <tr className="border-b text-left">
-                        <th className="pb-3 font-medium">运行ID</th>
-                        <th className="pb-3 font-medium">状态</th>
-                        <th className="pb-3 font-medium">采集记录数</th>
-                        <th className="pb-3 font-medium">开始时间</th>
-                        <th className="pb-3 font-medium">完成时间</th>
-                        <th className="pb-3 font-medium">耗时</th>
-                        <th className="pb-3 font-medium">错误信息</th>
+                    <thead className="bg-muted/50">
+                      <tr className="h-11">
+                        <th className="px-4 text-left text-[12px] font-medium text-muted-foreground">
+                          开始时间
+                        </th>
+                        <th className="px-4 text-left text-[12px] font-medium text-muted-foreground">
+                          持续时间
+                        </th>
+                        <th className="px-4 text-left text-[12px] font-medium text-muted-foreground">
+                          状态
+                        </th>
+                        <th className="px-4 text-right text-[12px] font-medium text-muted-foreground">
+                          新记录
+                        </th>
+                        <th className="px-4 text-right text-[12px] font-medium text-muted-foreground">
+                          重复
+                        </th>
+                        <th className="px-4 text-right text-[12px] font-medium text-muted-foreground">
+                          失败
+                        </th>
+                        <th className="px-4 text-left text-[12px] font-medium text-muted-foreground">
+                          错误信息
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {runHistory.map((run) => {
-                        const duration = run.completed_at
-                          ? Math.round(
-                              (new Date(run.completed_at).getTime() -
-                                new Date(run.started_at).getTime()) /
-                                1000
-                            )
-                          : null;
-                        return (
-                          <tr key={run.id} className="border-b hover:bg-muted/50">
-                            <td className="py-4 font-mono text-xs">{run.id.slice(0, 8)}...</td>
-                            <td className="py-4">{getStatusBadge(run.status || 'running')}</td>
-                            <td className="py-4">{run.new_records ?? 0}</td>
-                            <td className="py-4 text-sm">
-                              {new Date(run.started_at).toLocaleString('zh-CN')}
-                            </td>
-                            <td className="py-4 text-sm">
-                              {run.completed_at
-                                ? new Date(run.completed_at).toLocaleString('zh-CN')
-                                : '运行中'}
-                            </td>
-                            <td className="py-4 text-sm">
-                              {duration !== null ? `${duration}秒` : '-'}
-                            </td>
-                            <td className="py-4 text-sm text-red-500">
-                              {run.error_message || '-'}
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      {runHistory.map((run) => (
+                        <tr
+                          key={run.id}
+                          className="h-14 border-b border-border hover:bg-accent/50 transition-colors"
+                        >
+                          <td className="px-4 text-[13px]">
+                            {formatDateTime(run.started_at)}
+                          </td>
+                          <td className="px-4 text-[13px] font-mono">
+                            {formatDuration(run.started_at, run.completed_at)}
+                          </td>
+                          <td className="px-4">
+                            {getStatusBadge(run.status)}
+                          </td>
+                          <td className="px-4 text-right text-[13px] font-mono font-semibold text-green-600">
+                            {run.new_records ?? 0}
+                          </td>
+                          <td className="px-4 text-right text-[13px] font-mono text-muted-foreground">
+                            {run.duplicate_records ?? 0}
+                          </td>
+                          <td className="px-4 text-right text-[13px] font-mono text-red-600">
+                            {run.failed_records ?? 0}
+                          </td>
+                          <td className="px-4 text-[13px] text-red-500">
+                            {run.error_message ? (
+                              <span className="truncate block max-w-xs" title={run.error_message}>
+                                {run.error_message}
+                              </span>
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
               )}
             </div>
-          </Card>
-        </TabsContent>
+          </TabsContent>
 
-        <TabsContent value="data" className="space-y-4">
-          <Card className="p-6">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">采集数据</h2>
-                <span className="text-sm text-muted-foreground">最近 {collectedData.length} 条记录</span>
+          <TabsContent value="data">
+            <div className="rounded-lg border border-border/60 bg-card overflow-hidden">
+              <div className="p-5 border-b border-border/60">
+                <h3 className="text-base font-semibold">采集数据</h3>
+                <p className="text-sm text-muted-foreground mt-1">最近 {collectedData.length} 条数据记录</p>
               </div>
+
               {collectedData.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">暂无采集数据</div>
+                <div className="p-12 text-center text-muted-foreground">
+                  <Database className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                  <p>暂无采集数据</p>
+                </div>
               ) : (
-                <div className="space-y-3">
-                  {collectedData.map((record) => (
-                    <Card key={record.id} className="p-4 bg-muted/30">
-                      <div className="flex items-start justify-between mb-2">
-                        <span className="text-xs font-mono text-muted-foreground">
-                          {record.id.slice(0, 8)}...
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(record.collected_at).toLocaleString('zh-CN')}
-                        </span>
-                      </div>
-                      <pre className="text-xs bg-background p-3 rounded border overflow-x-auto">
-                        {JSON.stringify(record, null, 2)}
-                      </pre>
-                    </Card>
-                  ))}
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-muted/50">
+                      <tr className="h-11">
+                        <th className="px-4 text-left text-[12px] font-medium text-muted-foreground">
+                          业务日期
+                        </th>
+                        <th className="px-4 text-left text-[12px] font-medium text-muted-foreground">
+                          主题
+                        </th>
+                        <th className="px-4 text-right text-[12px] font-medium text-muted-foreground">
+                          数值
+                        </th>
+                        <th className="px-4 text-left text-[12px] font-medium text-muted-foreground">
+                          单位
+                        </th>
+                        <th className="px-4 text-left text-[12px] font-medium text-muted-foreground">
+                          采集时间
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {collectedData.map((record) => (
+                        <tr
+                          key={record.id}
+                          className="h-12 border-b border-border hover:bg-accent/50 transition-colors"
+                        >
+                          <td className="px-4 text-[13px] font-mono">
+                            {record.business_date}
+                          </td>
+                          <td className="px-4 text-[13px]">
+                            {record.topic_name || '-'}
+                          </td>
+                          <td className="px-4 text-right text-[13px] font-mono font-semibold">
+                            {record.value?.toFixed(2) || '-'}
+                          </td>
+                          <td className="px-4 text-[13px] text-muted-foreground">
+                            {record.unit || '-'}
+                          </td>
+                          <td className="px-4 text-[13px] text-muted-foreground">
+                            {formatDateTime(record.collected_at)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
-          </Card>
-        </TabsContent>
-      </Tabs>
-    </div>
+          </TabsContent>
+
+          <TabsContent value="info">
+            <Card className="p-6">
+              <h2 className="text-lg font-semibold mb-4">适配器配置</h2>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <div className="text-sm text-muted-foreground">适配器ID</div>
+                  <div className="font-mono text-sm mt-1">{adapter.id}</div>
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground">脚本文件</div>
+                  <div className="font-mono text-sm mt-1">{adapter.script_file}</div>
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground">数据源</div>
+                  <div className="mt-1">{adapter.source?.name || adapter.source_id}</div>
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground">数据主题</div>
+                  <div className="mt-1">{adapter.topic_name}</div>
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground">创建时间</div>
+                  <div className="text-sm mt-1">
+                    {adapter.created_at ? formatDateTime(adapter.created_at) : '-'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm text-muted-foreground">最后运行</div>
+                  <div className="text-sm mt-1">
+                    {adapter.last_run_at ? formatDateTime(adapter.last_run_at) : '从未运行'}
+                  </div>
+                </div>
+              </div>
+
+              {adapter.source && (
+                <>
+                  <div className="border-t my-6" />
+                  <h2 className="text-lg font-semibold mb-4">数据源信息</h2>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <div className="text-sm text-muted-foreground">名称</div>
+                      <div className="mt-1">{adapter.source.name}</div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-muted-foreground">域名</div>
+                      <div className="mt-1">{adapter.source.domain || '-'}</div>
+                    </div>
+                    {adapter.source.description && (
+                      <div className="md:col-span-2">
+                        <div className="text-sm text-muted-foreground">描述</div>
+                        <div className="mt-1">{adapter.source.description}</div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </AppLayout>
   );
 }

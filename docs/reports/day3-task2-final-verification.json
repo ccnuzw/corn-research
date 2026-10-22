@@ -1,0 +1,60 @@
+{
+  "boyar_prior_manual_execution_rechecked": {
+    "collection_run_id": "6e14ad92-d520-45c9-abca-3ed6854420a4",
+    "completed_at": "2026-10-22T04:22:50.997008Z",
+    "error_message": null,
+    "id": "281434cd-2da0-4251-94a3-6cb35df23a96",
+    "job_id": "89000000-0000-4000-8000-000000000001",
+    "records_collected": 0,
+    "started_at": "2026-10-22T04:22:46.490490Z",
+    "status": "success",
+    "trigger_type": "manual"
+  },
+  "sina_manual_execution_repeated": {
+    "collection_run_id": "60be13d8-9cfe-4d4f-9a70-bc2f8493fbd7",
+    "completed_at": "2026-10-22T04:26:57.816004Z",
+    "error_message": null,
+    "id": "0bf9c6ad-1093-4d31-a03d-cd5be9d6c896",
+    "job_id": "89000000-0000-4000-8000-000000000002",
+    "records_collected": 41,
+    "started_at": "2026-10-22T04:26:47.013502Z",
+    "status": "success",
+    "trigger_type": "manual"
+  },
+  "jobs_after_failure_probe_cleanup": [
+    {
+      "collector_id": "boyar_production",
+      "created_at": "2026-10-22T04:20:48.151442Z",
+      "cron_expression": "0 0 0 * * *",
+      "description": "每天北京时间08:00 / UTC 00:00",
+      "enabled": false,
+      "failed_count": 0,
+      "id": "89000000-0000-4000-8000-000000000001",
+      "last_error": null,
+      "last_run": "2026-10-22T04:22:46.490490Z",
+      "name": "博亚每日采集",
+      "next_run": null,
+      "status": "success",
+      "success_count": 1,
+      "timezone": "UTC",
+      "total_runs": 1
+    },
+    {
+      "collector_id": "sina_production",
+      "created_at": "2026-10-22T04:20:48.151442Z",
+      "cron_expression": "0 0 1 * * *",
+      "description": "每天北京时间09:00 / UTC 01:00",
+      "enabled": false,
+      "failed_count": 0,
+      "id": "89000000-0000-4000-8000-000000000002",
+      "last_error": null,
+      "last_run": "2026-10-22T04:26:47.013502Z",
+      "name": "新浪玉米每日采集",
+      "next_run": null,
+      "status": "success",
+      "success_count": 3,
+      "timezone": "UTC",
+      "total_runs": 3
+    }
+  ]
+}

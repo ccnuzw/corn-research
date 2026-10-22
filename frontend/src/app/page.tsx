@@ -17,6 +17,7 @@ import {
   AlertCircle,
 } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { TrendChart, QualityChart, SourceChart, TimelineChart } from '@/components/charts'
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DataStats | null>(null)
@@ -174,6 +175,14 @@ export default function DashboardPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* 数据可视化图表 */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <TrendChart />
+          <QualityChart />
+          <SourceChart />
+          <TimelineChart />
+        </div>
 
         {/* 采集器状态列表 */}
         <Card className="card-in">

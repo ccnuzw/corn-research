@@ -346,161 +346,27 @@ pub async fn run_adapter(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<RunResult>>, StatusCode> {
-    use crate::python_bridge::run_python_collector;
-    
-    // 检查适配器是否存在
-    let adapter = match adapter::Entity::find_by_id(&id).one(&state.db).await {
-        Ok(Some(a)) => a,
-        Ok(None) => return Err(StatusCode::NOT_FOUND),
-        Err(e) => {
-            tracing::error!("Failed to find adapter: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
-
-    // 创建运行记录
-    let run_id = Uuid::new_v4().to_string();
-    let run_model = run::ActiveModel {
-        id: Set(run_id.clone()),
-        adapter_id: Set(id.clone()),
-        started_at: Set(Utc::now().into()),
-        status: Set(Some("running".to_string())),
-        ..Default::default()
-    };
-
-    let run_record = match run_model.insert(&state.db).await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("Failed to create run record: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
-
-    // 异步执行采集任务
+    let adapter = adapter::Entity::find_by_id(&id).one(&state.db).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let history = crate::collection_execution::start_run(&state.db, &id).await
+        .map_err(|e| {
+            tracing::error!("Failed to create run: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    let run_id = history.id.clone();
+    let name = adapter.name.clone();
     let db = state.db.clone();
-    let adapter_id = id.clone();
-    let adapter_name = adapter.name.clone();
-    let script_file = adapter.script_file.clone();
-    let topic_name = adapter.topic_name.clone();
-    
     tokio::spawn(async move {
-        tracing::info!("🚀 Starting collection for adapter: {}", adapter_id);
-        
-        let result = run_python_collector(&script_file, Some(100)).await;
-        
-        match result {
-            Ok(records) => {
-                tracing::info!("✅ Collected {} records from {}", records.len(), adapter_id);
-                
-                // 保存采集记录到数据库
-                let mut new_records = 0;
-                let mut duplicate_records = 0;
-                let mut failed_records = 0;
-                
-                for raw_record in records {
-                    // 创建采集记录
-                    let record_id = Uuid::new_v4().to_string();
-                    
-                    // 解析日期
-                    let business_date = match chrono::NaiveDate::parse_from_str(&raw_record.business_date, "%Y-%m-%d") {
-                        Ok(date) => date,
-                        Err(_) => {
-                            tracing::warn!("Invalid date format: {}", raw_record.business_date);
-                            failed_records += 1;
-                            continue;
-                        }
-                    };
-                    
-                    let record_model = record::ActiveModel {
-                        id: Set(record_id),
-                        adapter_id: Set(adapter_id.clone()),
-                        business_date: Set(business_date),
-                        value: Set(Some(rust_decimal::Decimal::from_f64_retain(raw_record.value).unwrap_or_default())),
-                        unit: Set(Some(raw_record.unit)),
-                        topic_name: Set(Some(topic_name.clone())),
-                        source_url: Set(Some(raw_record.source_url)),
-                        source_html_path: Set(None),
-                        quality_grade: Set(None),
-                        quality_score: Set(None),
-                        collected_at: Set(Utc::now().into()),
-                        ..Default::default()
-                    };
-                    
-                    match record_model.insert(&db).await {
-                        Ok(_) => new_records += 1,
-                        Err(e) => {
-                            if e.to_string().contains("duplicate") || e.to_string().contains("unique") {
-                                duplicate_records += 1;
-                            } else {
-                                tracing::error!("Failed to insert record: {}", e);
-                                failed_records += 1;
-                            }
-                        }
-                    }
-                }
-                
-                // 更新运行记录
-                let mut run_update: run::ActiveModel = run_record.into();
-                run_update.status = Set(Some("success".to_string()));
-                run_update.completed_at = Set(Some(Utc::now().into()));
-                run_update.new_records = Set(Some(new_records));
-                run_update.duplicate_records = Set(Some(duplicate_records));
-                run_update.failed_records = Set(Some(failed_records));
-                
-                if let Err(e) = run_update.update(&db).await {
-                    tracing::error!("Failed to update run record: {}", e);
-                }
-                
-                // 更新适配器统计
-                if let Ok(Some(adapter)) = adapter::Entity::find_by_id(&adapter_id).one(&db).await {
-                    let mut adapter_update: adapter::ActiveModel = adapter.into();
-                    adapter_update.last_run_at = Set(Some(Utc::now().into()));
-                    adapter_update.total_runs = Set(adapter_update.total_runs.unwrap() + 1);
-                    adapter_update.successful_runs = Set(adapter_update.successful_runs.unwrap() + 1);
-                    
-                    if let Err(e) = adapter_update.update(&db).await {
-                        tracing::error!("Failed to update adapter stats: {}", e);
-                    }
-                }
-                
-                tracing::info!("📊 Run complete: {} new, {} duplicate, {} failed", 
-                    new_records, duplicate_records, failed_records);
-            }
-            Err(e) => {
-                tracing::error!("❌ Collection failed for {}: {}", adapter_id, e);
-                
-                // 更新运行记录为失败
-                let mut run_update: run::ActiveModel = run_record.into();
-                run_update.status = Set(Some("failed".to_string()));
-                run_update.completed_at = Set(Some(Utc::now().into()));
-                run_update.error_message = Set(Some(e.to_string()));
-                
-                if let Err(e) = run_update.update(&db).await {
-                    tracing::error!("Failed to update run record: {}", e);
-                }
-                
-                // 更新适配器统计
-                if let Ok(Some(adapter)) = adapter::Entity::find_by_id(&adapter_id).one(&db).await {
-                    let mut adapter_update: adapter::ActiveModel = adapter.into();
-                    adapter_update.last_run_at = Set(Some(Utc::now().into()));
-                    adapter_update.total_runs = Set(adapter_update.total_runs.unwrap() + 1);
-                    adapter_update.failed_runs = Set(adapter_update.failed_runs.unwrap() + 1);
-                    adapter_update.last_error = Set(Some(e));
-                    
-                    if let Err(e) = adapter_update.update(&db).await {
-                        tracing::error!("Failed to update adapter stats: {}", e);
-                    }
-                }
-            }
+        if let Err(e) = crate::collection_execution::execute_run(db, adapter, history, 100, true).await {
+            tracing::error!("Collection failed: {}", e);
         }
     });
-
     Ok(Json(ApiResponse {
         success: true,
         data: Some(RunResult {
-            run_id,
-            status: "running".to_string(),
-            message: format!("Collection started for adapter: {}", adapter_name),
+            run_id, status: "running".to_string(),
+            message: format!("Collection started for adapter: {}", name),
         }),
         message: None,
     }))
@@ -569,18 +435,28 @@ pub async fn stop_adapter(
 #[derive(Deserialize)]
 pub struct RunsQuery {
     pub limit: Option<u64>,
+    pub offset: Option<u64>,
 }
 
 pub async fn get_adapter_runs(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Query(query): Query<RunsQuery>,
-) -> Result<Json<ApiResponse<Vec<run::Model>>>, StatusCode> {
+) -> Result<Json<ApiResponse<Vec<crate::collection_execution::CollectionRun>>>, StatusCode> {
     let limit = query.limit.unwrap_or(20);
+    if !(1..=100).contains(&limit) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    if adapter::Entity::find_by_id(&id).one(&state.db).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?.is_none() {
+        return Err(StatusCode::NOT_FOUND);
+    }
 
     match run::Entity::find()
         .filter(run::Column::AdapterId.eq(id))
         .order_by_desc(run::Column::StartedAt)
+        .order_by_desc(run::Column::Id)
+        .offset(query.offset.unwrap_or(0))
         .limit(limit)
         .all(&state.db)
         .await
@@ -807,6 +683,10 @@ pub async fn query_records(
                     value: Some(raw.value),
                     unit: Some(raw.unit),
                     topic_name: Some(raw.indicator_name),
+                    record_key: String::new(),
+                    indicator: None,
+                    region: raw.region,
+                    metadata: None,
                     source_url: Some(raw.source_url),
                     source_html_path: None,
                     quality_grade: None,
