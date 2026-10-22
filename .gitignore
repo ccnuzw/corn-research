@@ -84,6 +84,7 @@ Thumbs.db
 
 # Docker
 .docker/
+.ccb/
 
 # Temporary files
 tmp/

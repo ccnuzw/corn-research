@@ -52,6 +52,13 @@ df -h
 
 ## 3. 生产环境变量
 
+开发 Compose 与生产 Compose 不共用连接配置规则。`docker-compose.yml` 的 backend
+使用 `BACKEND_DATABASE_URL`、`BACKEND_REDIS_URL` 作为可选覆盖；默认连接服务名
+`postgres:5432`、`redis:6379`，不继承主机测试用的 `DATABASE_URL`、`REDIS_URL`。
+容器内的 `localhost` 指向该容器自身，不能使用主机映射端口 15432/16380 连接其他容器。
+如现有服务使用不同凭据或认证方式，将专用覆盖写入被忽略且权限为 0600 的 `.env`，
+不得提交实际连接 URL。生产仍以本指南和 `docker-compose.prod.yml` 的必填强密码为准。
+
 在独立部署目录工作，不要覆盖正在运行的开发目录：
 
 ```bash
