@@ -1,0 +1,55 @@
+{
+  "version": "3.2",
+  "layout": "7-tabs-complete",
+  "created_at": "2026-10-22T02:16:30Z",
+  "workspace_id": "wR",
+  "team_lead": {
+    "pane_id": "wR:p1",
+    "tab_id": "wR:t1",
+    "agent": "hermes",
+    "role": "Team Lead",
+    "name": "玉米超人"
+  },
+  "architect": {
+    "pane_id": "wR:pH",
+    "tab_id": "wR:tB",
+    "agent": "claude",
+    "role": "Architect",
+    "name": "architect"
+  },
+  "frontend_engineer": {
+    "pane_id": "wR:pJ",
+    "tab_id": "wR:tC",
+    "agent": "opencode",
+    "role": "Frontend Engineer",
+    "name": "frontend-engineer"
+  },
+  "backend_engineer": {
+    "pane_id": "wR:pK",
+    "tab_id": "wR:tD",
+    "agent": "codex",
+    "role": "Backend Engineer",
+    "name": "backend-engineer"
+  },
+  "qa_engineer": {
+    "pane_id": "wR:pT",
+    "tab_id": "wR:tJ",
+    "agent": "omp",
+    "role": "QA Engineer",
+    "name": "qa-engineer"
+  },
+  "test_engineer": {
+    "pane_id": "wR:pV",
+    "tab_id": "wR:tK",
+    "agent": "omp",
+    "role": "Test Engineer",
+    "name": "test-engineer"
+  },
+  "devops_engineer": {
+    "pane_id": "wR:pW",
+    "tab_id": "wR:tM",
+    "agent": "codex",
+    "role": "DevOps Engineer",
+    "name": "devops-engineer"
+  }
+}

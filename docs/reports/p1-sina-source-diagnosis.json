@@ -1,0 +1,44 @@
+[
+  {
+    "user_agent_type": "mobile",
+    "response_bytes": 2496,
+    "title": "CBOT-玉米(C)-期货行情,价格走势图,新闻-新浪财经",
+    "eligible_articles": 0,
+    "candidate_urls": []
+  },
+  {
+    "user_agent_type": "desktop",
+    "response_bytes": 75357,
+    "title": "玉米期货_期货_新浪财经_新浪网",
+    "eligible_articles": 27,
+    "candidate_urls": [
+      "https://finance.sina.com.cn/money/future/wemedia/2026-10-22/doc-inivzytv5980361.shtml",
+      "https://finance.sina.com.cn/money/future/wemedia/2026-10-22/doc-inivziwc6051581.shtml",
+      "https://finance.sina.com.cn/money/future/wemedia/2026-10-21/doc-inivxvuv6220430.shtml",
+      "https://finance.sina.com.cn/money/future/wemedia/2026-10-21/doc-inivxrnx6272652.shtml",
+      "https://finance.sina.com.cn/money/future/wemedia/2026-10-21/doc-inivxrny7940656.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-05-06/doc-inevrkuv4515508.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-04-30/doc-ineuxfhz4964211.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-04-28/doc-ineutiyv6580525.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-04-24/doc-ineufwyx3567955.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-04-23/doc-ineucyiv4413976.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-04-22/doc-inetzvkv5305594.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-04-18/doc-inetqkku1333364.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-04-14/doc-inetaxma9034575.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-04-10/doc-inesspws5779029.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-04-08/doc-inesnfyk0358390.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-04-01/doc-inerscvh7210860.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-04-01/doc-inerrxps0287400.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-03-31/doc-inerpuqs1148321.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-03-26/doc-ineqyrfp8936974.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-03-26/doc-ineqxyiu1782262.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-03-25/doc-ineqvzsn6929797.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-03-24/doc-ineqtsmq7881172.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-03-17/doc-inepyfem3464173.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-03-17/doc-inepxywh0573321.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-03-14/doc-inepritp9620166.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-03-10/doc-inepcsmr9864022.shtml",
+      "https://finance.sina.com.cn/money/future/rese/2025-02-25/doc-inemsfyn9193185.shtml"
+    ]
+  }
+]
